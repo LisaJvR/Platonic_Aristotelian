@@ -2,30 +2,13 @@ from tqdm import trange
 import torch
 import gc
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 def load_img_models(model_name):
     return None
 
 def extract_image(images, model_name, device, batch_size):
     return None
-
-
-def load_llm(model_name):
-    '''
-    Loads the model from huggingface and returns the model. 
-    It uses device_map="auto" to automatically use the available GPU/CPU resources.
-    '''
-    
-    # dtype = torch.bfloat16 if check_bfloat16_support() else torch.float32
-    # print(f"torch_dtype:\t{dtype}")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        device_map="auto",
-        torch_dtype="auto",
-        output_hidden_states=True,
-    ).eval()
-    return model
-
 
 def load_text_model(model_name):
     ''' 
@@ -46,7 +29,7 @@ def load_text_model(model_name):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         output_hidden_states=True, # want all layers
-        torch_dtype="auto",
+        torch_dtype="auto",#XXX double check if this is the best option for memory usage, could use float16 or bfloat16
         device_map="auto",
     )
 
@@ -67,6 +50,7 @@ def extract_text(texts, model_name, batch_size, max_length=512, return_att=False
     tok, model = load_text_model(model_name)
 
     num_params = sum(p.numel() for p in model.parameters())
+
     # tokenize all the texts at once
     tokenized = tok(
         texts,
@@ -82,7 +66,9 @@ def extract_text(texts, model_name, batch_size, max_length=512, return_att=False
     all_last_feats = []
 
     for i in trange(0, len(texts), batch_size):
-        batch = {k: v[i:i + batch_size].to(device) for k, v in tokenized.items()} # automatically handles different representations and additional fields
+
+        # automatically handles different representations and additional fields
+        batch = {k: v[i:i + batch_size].to(device) for k, v in tokenized.items()} 
         with torch.no_grad():
             outputs = model(**batch) #XXX check if this breaks, could use batch['input_ids'] and batch['attention_mask'] instead of **batch
 
@@ -99,7 +85,7 @@ def extract_text(texts, model_name, batch_size, max_length=512, return_att=False
     all_avg_feats = torch.cat(all_avg_feats, dim=0)
     all_last_feats = torch.cat(all_last_feats, dim=0)
 
-    # try save space ---- 
+    #  save space ------- 
     del model
     del tok
     gc.collect()
@@ -108,11 +94,47 @@ def extract_text(texts, model_name, batch_size, max_length=512, return_att=False
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+    meta_data = {
+        "ids": list(range(len(texts))), # image/caption/audio identifiers
+        "model_name": model_name,
+        "modality": "text",
+    }
+
     if return_att == True:
-        return all_avg_feats, all_last_feats,num_params, tokenized["attention_mask"] # output formal (B,L,D)
+        return all_avg_feats, all_last_feats,num_params,meta_data, tokenized["attention_mask"] # output formal (B,L,D)
     else:
         # output formal (B,L,D)
-        return all_avg_feats, all_last_feats, num_params
+        return all_avg_feats, all_last_feats, num_params, meta_data
+
+def save_to_dir(avg_features,final_features,meta_data):
+    '''
+    Save to directory with the following structure: ../embeddings/{modality}/{model_name}/features.pt
+    '''
+
+    safe_model_name = meta_data["model_name"].replace("/", "__")
+
+    dir_path = os.path.join(
+        "..",
+        "embeddings",
+        meta_data["modality"],
+        safe_model_name
+    )
+
+    os.makedirs(dir_path, exist_ok=True)
+
+    output = {
+                "avg": avg_features.cpu(),
+                "final": final_features.cpu(),
+                "meatadata": meta_data
+            }
+    
+    torch.save(
+                output,
+                os.path.join(dir_path, "features.pt")
+            )
+
+    print(f"Saved features to: {dir_path}/features.pt")
+
 
 def test_text_extraction(model_names, texts, batch_size=1, max_length=512):
     '''
@@ -125,16 +147,25 @@ def test_text_extraction(model_names, texts, batch_size=1, max_length=512):
 
     for model_name in model_names:
         print(f"\n Extracting features for model: {model_name}")
-        avg_feats, last_feats, num_params = extract_text(test_text, model_name, batch_size=batch_size, max_length=max_length)
+        avg_feats, last_feats, num_params, metadata = extract_text(test_text, model_name, batch_size=batch_size, max_length=max_length)
         print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Last Feats Shape: {last_feats.shape}, Num Params: {num_params}")
+        
+        save_to_dir(avg_feats,last_feats,metadata["ids"], metadata)
 
     print("--- Text extraction test completed for all models.--- ")
+
+    save_to_dir(avg_feats, model_name, "text")
 
 
 from pna_data import get_flickr8k_dataset_paths, get_text_only
 from pna_models import get_models
 
 if __name__ == "__main__":
+
+    print(torch.cuda.get_device_name(0))
+
+    total_vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
+    print(f"VRAM: {total_vram:.1f} GB")
     # Example usage
     dataset, texts_df = get_text_only()
 
