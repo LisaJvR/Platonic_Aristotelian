@@ -61,7 +61,7 @@ df_path = "../../data/flickr8k_audio_text_image.csv"
 
 print("Path to token_file files:", token_text_path)
 
-def get_flickr8k_dataset():
+def get_flickr8k_dataset_paths():
     return path, path_audio
 
 def get_flikr8k_text_image():
@@ -80,6 +80,7 @@ def get_flikr8k_text_audio_image():
 
 def build_flikr8k_text_audio_image():
     import pandas as pd
+    import os
     # first check if the files exist in the path, if not download them
 
     # Get the paths to the Flickr8k dataset files
@@ -133,9 +134,9 @@ def build_flikr8k_text_audio_image():
     print("Columns in merged dataframe:", all_df.columns.tolist()) 
     print(all_df.head())
 
-    # save to dir as .txt
+    # check for directory else create it
+    os.makedirs(os.path.dirname(df_path), exist_ok=True)
     all_df.to_csv(df_path, index=False)
-
     return all_df
 
 def build_ids():
