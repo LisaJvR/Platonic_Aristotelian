@@ -1,7 +1,7 @@
 from tqdm import trange
 import torch
 import gc
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM
 import os
 
 def save_to_dir(avg_features,final_features,meta_data):
@@ -47,8 +47,12 @@ def load_text_model(model_name, colab=True):
     Tokenizers are set to pad on the left and use eos tokens when tokens are not available.
     It uses device, and returns hidden states for all layers.
     '''
-    
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    # need this to run locally, no issue on colab
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    except ValueError:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -57,6 +61,9 @@ def load_text_model(model_name, colab=True):
 
     if colab == True:
         offload_folder = "/content/offload" # for colab
+        os.makedirs(offload_folder, exist_ok=True)
+    else:
+        offload_folder = "../../bin/offload" # for local
         os.makedirs(offload_folder, exist_ok=True)
 
     model = AutoModel.from_pretrained(
@@ -67,12 +74,12 @@ def load_text_model(model_name, colab=True):
     )
 
     model.eval()
-    print(model.hf_device_map)
+    # print(model.hf_device_map)
 
     return tokenizer, model
 
 # max char lengths is 199, this max length is token- each model measures it differently.
-def extract_text(text_data, model_name, batch_size, max_length=512, test=True):
+def extract_text(text_data, model_name, batch_size, max_length=512, test=True, colab=True):
     '''
     This functions takes in the entire text corpus along with model name, batch_size, and the max_length (in tokens).
     return attention = True returns the attions mask for each token - metadata to see which tokens were used.
@@ -87,8 +94,7 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True):
     if test == True:
         text = text[:1]  # Use only the first text to avoid memory issues
 
-    tok, model = load_text_model(model_name)
-    model.eval()
+    tok, model = load_text_model(model_name, colab=colab) # returns eval model
 
     
 
@@ -150,7 +156,7 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True):
     return all_avg_feats, all_last_toks, meta_data
 
 
-def test_text_extraction(model_names, texts_df, batch_size=1, max_length=512):
+def test_text_extraction(model_names, texts_df, colab= True, batch_size=1, max_length=512):
     '''
     This function tests the text extraction for a list of model names and a list of texts.
     It prints the shape of the average and last layer features for each model.
@@ -158,37 +164,39 @@ def test_text_extraction(model_names, texts_df, batch_size=1, max_length=512):
 
     for model_name in model_names:
         print(f"\n Extracting features for model: {model_name}")
-        avg_feats, last_feats, num_params, metadata = extract_text(text_data, model_name, batch_size=batch_size, max_length=max_length)
-        print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Last Feats Shape: {last_feats.shape}, Num Params: {num_params}")
+        avg_feats, last_feats, metadata = extract_text(texts_df, model_name, batch_size=batch_size, max_length=max_length, colab=colab)
+        print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Last Feats Shape: {last_feats.shape}, Num Params: {metadata['num_params']}")
         
         save_to_dir(avg_feats,last_feats, metadata)
 
     print("--- Text extraction test completed for all models.--- ")
 
 
-from pna_data import get_flickr8k_dataset, get_text_only, build_ids, build_flikr8k_text_audio_image
+from pna_data import get_text_only, build_ids, build_flikr8k_text_audio_image, get_flikr8k_text_audio_image
 from pna_models import get_models
 
 if __name__ == "__main__":
-    df = get_flickr8k_dataset()
+    df = get_flikr8k_text_audio_image()
 
-    print(torch.cuda.get_device_name(0))
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(torch.cuda.get_device_name(0))
+        total_vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        print(f"VRAM: {total_vram:.1f} GB")
 
+    print(df.head())
 
-    total_vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    print(f"VRAM: {total_vram:.1f} GB")
-    # Example usage
-    dataset, texts_df = get_text_only()
+    modelset = "test"
+    modality = "text"
 
-    print(texts_df.head())
-
-    text_models = get_models("test", "text")
+    print(f"Running {modelset} {modality}: --------------------------------")
+    text_models = get_models(modelset, modality)
     print(f"Text models: {text_models}")
 
     text_df = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
 
     # test extract_text function for each model but only one line of text to avoid memory issues
-    test_text_extraction(text_models, text_df, batch_size=1, max_length=512)
+    test_text_extraction(text_models, text_df, batch_size=1, max_length=512, colab=True)
 
 
 
