@@ -4,6 +4,11 @@ import gc
 from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM
 import os
 
+def check_bfloat16_support():
+    if not torch.cuda.is_available():
+        return False
+    return torch.cuda.get_device_capability(torch.cuda.current_device())[0] >= 7
+
 def save_to_dir(avg_features,final_features,meta_data):
     '''
     Save to directory with the following structure: ../embeddings/{modality}/{model_name}/features.pt
@@ -22,7 +27,7 @@ def save_to_dir(avg_features,final_features,meta_data):
 
     output = {
                 "avg": avg_features.cpu(),
-                "final": final_features.cpu(),
+                # "final": final_features.cpu(),
                 "metadata": meta_data
             }
     
@@ -66,10 +71,14 @@ def load_text_model(model_name, colab=True):
         offload_folder = "../../bin/offload" # for local
         os.makedirs(offload_folder, exist_ok=True)
 
+    dtype = torch.bfloat16 #if check_bfloat16_support() else torch.float32
+
+    print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
+
     model = AutoModel.from_pretrained(
         model_name,
         output_hidden_states=True, # want all layers
-        torch_dtype="auto",#XXX double check if this is the best option for memory usage, could use float16 or bfloat16
+        dtype=dtype,#XXX double check if this is the best option for memory usage, could use float16 or bfloat16
         device_map="auto",
     )
 
@@ -91,12 +100,7 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
         # texts data: image caption_number caption
     text = text_data["caption"].tolist()
 
-    if test == True:
-        text = text[:1]  # Use only the first text to avoid memory issues
-
     tok, model = load_text_model(model_name, colab=colab) # returns eval model
-
-    
 
     num_params = sum(p.numel() for p in model.parameters())
 
@@ -114,6 +118,7 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
     all_avg_feats = []
     all_last_toks = []
 
+    print(f"Extracting features for {len(text)} texts in batches of {batch_size}...")
     for i in trange(0, len(text), batch_size):
 
         # automatically handles different representations and additional fields
@@ -131,6 +136,9 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
             all_avg_feats.append(feats_avg.cpu())
             all_last_toks.append(toks_last.cpu())
 
+            if test == True:
+                break  # Only process the first batch for testing
+
     all_avg_feats = torch.cat(all_avg_feats, dim=0) #avg embedding over all layers, 1 sample
     all_last_toks = torch.cat(all_last_toks, dim=0)
 
@@ -145,15 +153,24 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
 
     meta_data = {
         "num_params": num_params,
-        "mask": tokenized["attention_mask"].cpu(),
+        # "mask": tokenized["attention_mask"].cpu(),
         # Alignment metadata specific to Flickr8k
-        "image_ids": text_data["image"].tolist(),
-        "caption_numbers": text_data["caption_number"].tolist(),
+        # "image_ids": text_data["image"].tolist(),
+        # "caption_numbers": text_data["caption_number"].tolist(),
         "model_name": model_name,
         "modality": "text",
     }
     # output formal (B,L,D)
     return all_avg_feats, all_last_toks, meta_data
+
+def check_prior_extraction(safe_model_name, modality):
+    # check if the directory with modality and model has files in it return boolean
+    save_path = f"../embeddings/{modality}/{safe_model_name}/features.pt"
+
+    if os.path.exists(save_path):
+        print(f"Features already extracted for {safe_model_name} in {modality}. Skipping extraction.")
+        return True
+    return False
 
 
 def test_text_extraction(model_names, texts_df, colab= True, batch_size=1, max_length=512):
@@ -164,6 +181,10 @@ def test_text_extraction(model_names, texts_df, colab= True, batch_size=1, max_l
 
     for model_name in model_names:
         print(f"\n Extracting features for model: {model_name}")
+        safe_model_name = model_name.replace("/", "__")
+        if check_prior_extraction(safe_model_name, "text"):
+            print(f"Skipping {model_name} as features already extracted.")
+            continue
         avg_feats, last_feats, metadata = extract_text(texts_df, model_name, batch_size=batch_size, max_length=max_length, colab=colab)
         print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Last Feats Shape: {last_feats.shape}, Num Params: {metadata['num_params']}")
         
@@ -172,11 +193,11 @@ def test_text_extraction(model_names, texts_df, colab= True, batch_size=1, max_l
     print("--- Text extraction test completed for all models.--- ")
 
 
-from pna_data import get_text_only, build_ids, build_flikr8k_text_audio_image, get_flikr8k_text_audio_image
+from pna_data import build_flikr8k_text_audio_image
 from pna_models import get_models
 
 if __name__ == "__main__":
-    df = get_flikr8k_text_audio_image()
+    df = build_flikr8k_text_audio_image()
 
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -196,7 +217,7 @@ if __name__ == "__main__":
     text_df = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
 
     # test extract_text function for each model but only one line of text to avoid memory issues
-    test_text_extraction(text_models, text_df, batch_size=1, max_length=512, colab=True)
+    test_text_extraction(text_models, text_df, batch_size=8, max_length=512, colab=False)
 
 
 
