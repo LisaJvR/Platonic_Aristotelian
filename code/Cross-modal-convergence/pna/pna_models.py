@@ -1,16 +1,11 @@
 MODELSETS = {
-    "main": {
+    "all": {
         "text": [
             "bigscience/bloom-560m",
             "bigscience/bloom-1b1",
             "bigscience/bloom-1b7",
             "bigscience/bloom-3b",
             "bigscience/bloom-7b1",
-            # "bigscience/bloomz-560m", # fine-tuned
-            # "bigscience/bloomz-1b1",
-            # "bigscience/bloomz-1b7",
-            # "bigscience/bloomz-3b",
-            # "bigscience/bloomz-7b1",
             "openlm-research/open_llama_3b",
             "openlm-research/open_llama_7b",
             "openlm-research/open_llama_13b",
@@ -19,7 +14,7 @@ MODELSETS = {
             "huggyllama/llama-30b",
             "huggyllama/llama-65b", # large
             "NousResearch/Meta-Llama-3-8B",
-            "NousResearch/Meta-Llama-3-70B", #large
+            "NousResearch/Meta-Llama-3-70B", #largest
             "google/gemma-2b",
             "google/gemma-7b",
             "mistralai/Mistral-7B-v0.1",
@@ -78,11 +73,39 @@ MODELSETS = {
 
             # "facebook/w2v-bert-2.0", # conformer
 
-            "openai/whisper-tiny", # only use encodings
-            "openai/whisper-base",
-            "openai/whisper-small",
-            "openai/whisper-medium",
-            "openai/whisper-large",
+            # "openai/whisper-tiny", # only use encodings
+            # "openai/whisper-base",
+            # "openai/whisper-small",
+            # "openai/whisper-medium",
+            # "openai/whisper-large",
+        ],
+    },
+    
+    "test": {
+        "text": [
+            "bigscience/bloom-560m",
+            "openlm-research/open_llama_3b",
+            "huggyllama/llama-7b",
+            "NousResearch/Meta-Llama-3-8B",
+            "google/gemma-2b",
+            "mistralai/Mistral-7B-v0.1",
+            "allenai/OLMo-1B-hf",
+            "facebook/data2vec-text-base",
+        ],
+        "image": [
+            "vit_base_patch16_224.augreg_in21k",
+            "vit_base_patch16_224.mae",
+            "vit_base_patch14_dinov2.lvd142m",
+            "vit_base_patch16_clip_224.laion2b",
+            "vit_base_patch16_clip_224.laion2b_ft_in12k",
+            "facebook/data2vec-vision-base",
+        ],
+        "speech": [
+            "facebook/wav2vec2-base",#self-supervised
+            "facebook/hubert-base-ls960",
+            "facebook/data2vec-audio-base",
+            "microsoft/wavlm-base",
+            "microsoft/unispeech-sat-base",
         ],
     }
 }
