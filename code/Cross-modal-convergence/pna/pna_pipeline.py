@@ -44,7 +44,7 @@ def load_img_models(model_name):
 def extract_image(images, model_name, device, batch_size):
     return None
 
-def load_text_model(model_name, colab=True):
+def load_text_model(model_name, cuda=True):
     ''' 
     Adapted from Koepke: https://github.com/akoepke/cave_umwelten/blob/main/extract_features.py#L163
 
@@ -53,7 +53,7 @@ def load_text_model(model_name, colab=True):
     It uses device, and returns hidden states for all layers.
     '''
 
-    # need this to run locally, no issue on colab
+    # need this to run locally, no issue on cuda
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     except ValueError:
@@ -64,8 +64,8 @@ def load_text_model(model_name, colab=True):
 
     tokenizer.padding_side = "left"
 
-    if colab == True:
-        offload_folder = "/content/offload" # for colab
+    if cuda == True:
+        offload_folder = "/content/offload" #XXX for colab
         os.makedirs(offload_folder, exist_ok=True)
     else:
         offload_folder = "../../bin/offload" # for local
@@ -88,7 +88,7 @@ def load_text_model(model_name, colab=True):
     return tokenizer, model
 
 # max char lengths is 199, this max length is token- each model measures it differently.
-def extract_text(text_data, model_name, batch_size, max_length=512, test=True, colab=True):
+def extract_text(text_data, model_name, batch_size, max_length=512, test=True, cuda=True):
     '''
     This functions takes in the entire text corpus along with model name, batch_size, and the max_length (in tokens).
     return attention = True returns the attions mask for each token - metadata to see which tokens were used.
@@ -100,7 +100,7 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
         # texts data: image caption_number caption
     text = text_data["caption"].tolist()
 
-    tok, model = load_text_model(model_name, colab=colab) # returns eval model
+    tok, model = load_text_model(model_name, cuda=cuda) # returns eval model
 
     num_params = sum(p.numel() for p in model.parameters())
 
@@ -173,7 +173,7 @@ def check_prior_extraction(safe_model_name, modality):
     return False
 
 
-def test_text_extraction(model_names, texts_df, colab= True, batch_size=1, max_length=512):
+def test_text_extraction(model_names, texts_df, cuda= True, batch_size=1, max_length=512):
     '''
     This function tests the text extraction for a list of model names and a list of texts.
     It prints the shape of the average and last layer features for each model.
@@ -185,7 +185,7 @@ def test_text_extraction(model_names, texts_df, colab= True, batch_size=1, max_l
         if check_prior_extraction(safe_model_name, "text"):
             print(f"Skipping {model_name} as features already extracted.")
             continue
-        avg_feats, last_feats, metadata = extract_text(texts_df, model_name, batch_size=batch_size, max_length=max_length, colab=colab)
+        avg_feats, last_feats, metadata = extract_text(texts_df, model_name, batch_size=batch_size, max_length=max_length, cuda=cuda)
         print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Last Feats Shape: {last_feats.shape}, Num Params: {metadata['num_params']}")
         
         save_to_dir(avg_feats,last_feats, metadata)
@@ -217,7 +217,11 @@ if __name__ == "__main__":
     text_df = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
 
     # test extract_text function for each model but only one line of text to avoid memory issues
-    test_text_extraction(text_models, text_df, batch_size=8, max_length=512, colab=False)
+    
+    # set cuda true or false
+    cuda = torch.cuda.is_available()
+
+    test_text_extraction(text_models, text_df, batch_size=8, max_length=512, cuda=cuda)
 
 
 
