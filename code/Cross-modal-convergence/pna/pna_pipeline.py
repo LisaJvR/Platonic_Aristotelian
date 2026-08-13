@@ -23,7 +23,7 @@ def save_to_dir(avg_features,meta_data):
     safe_model_name = meta_data["model_name"].replace("/", "__")
 
     dir_path = os.path.join(
-        "..", EMB_DIR,
+        EMB_DIR,
         meta_data["modality"], safe_model_name
     )
 
@@ -158,8 +158,6 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
     all_avg_feats = []
     # all_last_toks = []
 
-    save_dataset_index(text_data, modality="text")
-
     print(f"Extracting features for {len(text)} texts in batches of {batch_size}...")
     for i in trange(0, len(text), batch_size):
 
@@ -208,7 +206,7 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
 
 def check_prior_extraction(safe_model_name, modality):
     # check if the directory with modality and model has files in it return boolean
-    save_path = f".{EMB_DIR}/{modality}/{safe_model_name}/features.pt"
+    save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features.pt"
 
     if os.path.exists(save_path):
         print(f"Features already extracted for {safe_model_name} in {modality}. Skipping extraction.")
@@ -220,7 +218,7 @@ def test_text_extraction(model_names, texts_df, cuda= True, batch_size=1, max_le
     This function tests the text extraction for a list of model names and a list of texts.
     It prints the shape of the average and last layer features for each model.
     '''
-
+    save_dataset_index(texts_df, modality="text")
     for model_name in model_names:
         print(f"\n Extracting features for model: {model_name}")
         safe_model_name = model_name.replace("/", "__")
