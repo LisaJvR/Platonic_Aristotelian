@@ -61,6 +61,8 @@ def load_text_model(model_name, cuda=True):
     except ValueError:
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
+    if "huggyllama" in model_name:
+        tokenizer.pad_token = "[PAD]"
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
