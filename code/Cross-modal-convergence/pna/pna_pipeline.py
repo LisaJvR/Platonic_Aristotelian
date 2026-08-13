@@ -3,13 +3,19 @@ import torch
 import gc
 from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM
 import os
+from pna_data import build_flikr8k_text_audio_image
+from pna_models import get_models
+
+EMB_DIR = "../embeddings"
+OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
+OFF_LOAD_FOLDER_LOCAL = "../../bin/offload"
 
 def check_bfloat16_support():
     if not torch.cuda.is_available():
         return False
     return torch.cuda.get_device_capability(torch.cuda.current_device())[0] >= 7
 
-def save_to_dir(avg_features,final_features,meta_data):
+def save_to_dir(avg_features,meta_data):
     '''
     Save to directory with the following structure: ../embeddings/{modality}/{model_name}/features.pt
     '''
@@ -17,23 +23,19 @@ def save_to_dir(avg_features,final_features,meta_data):
     safe_model_name = meta_data["model_name"].replace("/", "__")
 
     dir_path = os.path.join(
-        "..",
-        "embeddings",
-        meta_data["modality"],
-        safe_model_name
+        "..", EMB_DIR,
+        meta_data["modality"], safe_model_name
     )
 
     os.makedirs(dir_path, exist_ok=True)
 
     output = {
-                "avg": avg_features.cpu(),
-                # "final": final_features.cpu(),
-                "metadata": meta_data
-            }
+        "avg": avg_features.cpu(),
+        "metadata": meta_data,
+    }
     
     torch.save(
-                output,
-                os.path.join(dir_path, "features.pt")
+        output,os.path.join(dir_path, "features.pt")
             )
 
     print(f"Saved features to: {dir_path}/features.pt")
@@ -65,10 +67,10 @@ def load_text_model(model_name, cuda=True):
     tokenizer.padding_side = "left"
 
     if cuda == True:
-        offload_folder = "/content/offload" #XXX for colab
+        offload_folder = OFF_LOAD_FOLDER_COLAB
         os.makedirs(offload_folder, exist_ok=True)
     else:
-        offload_folder = "../../bin/offload" # for local
+        offload_folder = OFF_LOAD_FOLDER_LOCAL
         os.makedirs(offload_folder, exist_ok=True)
 
     dtype = torch.bfloat16 #if check_bfloat16_support() else torch.float32
@@ -87,6 +89,46 @@ def load_text_model(model_name, cuda=True):
 
     return tokenizer, model
 
+def save_dataset_index(df, modality):
+    if modality == "text":
+        index_df = (
+        df[["image", "caption_number"]]
+        .sort_values(["image", "caption_number"])
+        .reset_index(drop=True)
+    )
+
+        index_df.to_csv(
+            f"{EMB_DIR}/text/dataset_index.csv",
+            index=False
+        )
+        print(f"Saved text dataset index to: {EMB_DIR}/text/dataset_index.csv")
+
+    elif modality == "image":
+        index_df = (
+        df[["image"]]
+        .sort_values(["image"])
+        .reset_index(drop=True)
+    )
+
+        index_df.to_csv(
+            f"{EMB_DIR}/image/dataset_index.csv",
+            index=False
+        )
+        print(f"Saved image dataset index to: {EMB_DIR}/image/dataset_index.csv")
+
+    elif modality == "speech":
+        index_df = (
+        df[["image", "caption_number"]]
+        .sort_values(["image", "caption_number"])
+        .reset_index(drop=True)
+    )
+
+        index_df.to_csv(
+            f"{EMB_DIR}/speech/dataset_index.csv",
+            index=False
+        )
+        print(f"Saved speech dataset index to: {EMB_DIR}/speech/dataset_index.csv")
+
 # max char lengths is 199, this max length is token- each model measures it differently.
 def extract_text(text_data, model_name, batch_size, max_length=512, test=True, cuda=True):
     '''
@@ -99,24 +141,22 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
     '''
         # texts data: image caption_number caption
     text = text_data["caption"].tolist()
-
     tok, model = load_text_model(model_name, cuda=cuda) # returns eval model
-
     num_params = sum(p.numel() for p in model.parameters())
 
     # tokenize all the texts at once
     tokenized = tok(
-        text,
-        padding="longest",
-        truncation=True,
-        return_tensors="pt",
+        text, padding="longest",
+        truncation=True, return_tensors="pt",
         max_length=max_length # not essential for all to have same lenth for pooling.
     )
 
     device = next(model.parameters()).device
 
     all_avg_feats = []
-    all_last_toks = []
+    # all_last_toks = []
+
+    save_dataset_index(text_data, modality="text")
 
     print(f"Extracting features for {len(text)} texts in batches of {batch_size}...")
     for i in trange(0, len(text), batch_size):
@@ -128,52 +168,52 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
 
             # pooled average
             feats = torch.stack(outputs["hidden_states"]).permute(1, 0, 2, 3)  # (B, L, T, D) - Batch, Layer, Token, Dim
+            print(f"Feats shape: {feats.shape} for batch {i} to {i + batch_size}")
             mask = batch["attention_mask"].unsqueeze(-1).unsqueeze(1)      # (B, 1, T, 1) 
             feats_avg = (feats * mask).sum(2) / mask.sum(2)
-            # last jayer token
-            toks_last = feats[:, :, -1, :]  # (B, L, [T],  D) # last layer token (captures all the info from previous tokens)
 
+            # toks_last = feats[:, :, -1, :]  # (B, L, [T],  D) # last layer token (captures all the info from previous tokens)
             all_avg_feats.append(feats_avg.cpu())
-            all_last_toks.append(toks_last.cpu())
+            # all_last_toks.append(toks_last.cpu())
 
             if test == True:
                 break  # Only process the first batch for testing
 
     all_avg_feats = torch.cat(all_avg_feats, dim=0) #avg embedding over all layers, 1 sample
-    all_last_toks = torch.cat(all_last_toks, dim=0)
+    # all_last_toks = torch.cat(all_last_toks, dim=0)
 
     #  save space ------- 
     del model
     del tok
     gc.collect()
+    torch.cuda.empty_cache()
     # -------------------
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
     meta_data = {
-        "num_params": num_params,
-        # "mask": tokenized["attention_mask"].cpu(),
-        # Alignment metadata specific to Flickr8k
-        # "image_ids": text_data["image"].tolist(),
-        # "caption_numbers": text_data["caption_number"].tolist(),
         "model_name": model_name,
         "modality": "text",
+        "num_params": num_params,
+        "num_samples": all_avg_feats.shape[0],
+        "num_layers": all_avg_feats.shape[1],
+        "hidden_dim": all_avg_feats.shape[2],
+        "dtype": str(all_avg_feats.dtype),
     }
-    # output formal (B,L,D)
-    return all_avg_feats, all_last_toks, meta_data
+
+    return all_avg_feats, meta_data, #  all_last_toks,
 
 def check_prior_extraction(safe_model_name, modality):
     # check if the directory with modality and model has files in it return boolean
-    save_path = f"../embeddings/{modality}/{safe_model_name}/features.pt"
+    save_path = f".{EMB_DIR}/{modality}/{safe_model_name}/features.pt"
 
     if os.path.exists(save_path):
         print(f"Features already extracted for {safe_model_name} in {modality}. Skipping extraction.")
         return True
     return False
 
-
-def test_text_extraction(model_names, texts_df, cuda= True, batch_size=1, max_length=512):
+def test_text_extraction(model_names, texts_df, cuda= True, batch_size=1, max_length=64):
     '''
     This function tests the text extraction for a list of model names and a list of texts.
     It prints the shape of the average and last layer features for each model.
@@ -185,16 +225,12 @@ def test_text_extraction(model_names, texts_df, cuda= True, batch_size=1, max_le
         if check_prior_extraction(safe_model_name, "text"):
             print(f"Skipping {model_name} as features already extracted.")
             continue
-        avg_feats, last_feats, metadata = extract_text(texts_df, model_name, batch_size=batch_size, max_length=max_length, cuda=cuda)
-        print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Last Feats Shape: {last_feats.shape}, Num Params: {metadata['num_params']}")
+        avg_feats, metadata = extract_text(texts_df, model_name, batch_size=batch_size, max_length=max_length, cuda=cuda)
+        print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Num Params: {metadata['num_params']}")
         
-        save_to_dir(avg_feats,last_feats, metadata)
+        save_to_dir(avg_feats,metadata)
 
     print("--- Text extraction test completed for all models.--- ")
-
-
-from pna_data import build_flikr8k_text_audio_image
-from pna_models import get_models
 
 if __name__ == "__main__":
     df = build_flikr8k_text_audio_image()
@@ -215,13 +251,11 @@ if __name__ == "__main__":
     print(f"Text models: {text_models}")
 
     text_df = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
-
-    # test extract_text function for each model but only one line of text to avoid memory issues
     
     # set cuda true or false
     cuda = torch.cuda.is_available()
 
-    test_text_extraction(text_models, text_df, batch_size=8, max_length=512, cuda=cuda)
+    test_text_extraction(text_models, text_df, batch_size=8, max_length=64, cuda=cuda)
 
 
 
