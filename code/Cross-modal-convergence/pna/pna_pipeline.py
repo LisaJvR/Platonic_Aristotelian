@@ -1,10 +1,15 @@
+from unittest import case
+
 from tqdm import trange
 import torch
 import gc
-from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM, ViTImageProcessor, ViTModel
 import os
-from pna_data import build_flikr8k_text_audio_image
+from pna_data import build_flikr8k_text_audio_image, get_image_files
 from pna_models import get_models
+import timm
+from timm.data import resolve_data_config, create_transform
+from torchvision.models.feature_extraction import create_feature_extractor
 
 EMB_DIR = "../embeddings"
 OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
@@ -34,62 +39,9 @@ def save_to_dir(avg_features,meta_data):
         "metadata": meta_data,
     }
     
-    torch.save(
-        output,os.path.join(dir_path, "features.pt")
-            )
+    torch.save(output,os.path.join(dir_path, "features.pt"))
 
     print(f"Saved features to: {dir_path}/features.pt")
-
-def load_img_models(model_name):
-    return None
-
-def extract_image(images, model_name, device, batch_size):
-    return None
-
-def load_text_model(model_name, cuda=True):
-    ''' 
-    Adapted from Koepke: https://github.com/akoepke/cave_umwelten/blob/main/extract_features.py#L163
-
-    This function takes in the huggingface model name and returns the model along with its tokenizer.
-    Tokenizers are set to pad on the left and use eos tokens when tokens are not available.
-    It uses device, and returns hidden states for all layers.
-    '''
-
-    # need this to run locally, no issue on cuda
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-    except ValueError:
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-
-    if "huggyllama" in model_name:
-        tokenizer.pad_token = "[PAD]"
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    tokenizer.padding_side = "left"
-
-    if cuda == True:
-        offload_folder = OFF_LOAD_FOLDER_COLAB
-        os.makedirs(offload_folder, exist_ok=True)
-    else:
-        offload_folder = OFF_LOAD_FOLDER_LOCAL
-        os.makedirs(offload_folder, exist_ok=True)
-
-    dtype = torch.bfloat16 #if check_bfloat16_support() else torch.float32
-
-    print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
-
-    model = AutoModel.from_pretrained(
-        model_name,
-        output_hidden_states=True, # want all layers
-        dtype=dtype,#XXX double check if this is the best option for memory usage, could use float16 or bfloat16
-        device_map="auto",
-    )
-
-    model.eval()
-    # print(model.hf_device_map)
-
-    return tokenizer, model
 
 def save_dataset_index(df, modality):
     if modality == "text":
@@ -131,7 +83,142 @@ def save_dataset_index(df, modality):
         )
         print(f"Saved speech dataset index to: {EMB_DIR}/speech/dataset_index.csv")
 
-# max char lengths is 199, this max length is token- each model measures it differently.
+def check_prior_extraction(safe_model_name, modality):
+    # check if the directory with modality and model has files in it return boolean
+    save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features.pt"
+
+    if os.path.exists(save_path):
+        print(f"Features already extracted for {safe_model_name} in {modality}. Skipping extraction.")
+        return True
+    return False
+
+def clean_up(model, tok):
+    del model
+    del tok
+    gc.collect()
+    if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+# Image
+# -----------------------
+
+def load_img_models(model_name, device):
+    proc = ViTImageProcessor.from_pretrained(model_name)
+    vision_model = ViTModel.from_pretrained(model_name)
+    return proc,vision_model
+
+def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
+    images = df["image"].tolist()
+
+    proc,vision_model = load_img_models(model_name, device)
+
+    num_params = sum(p.numel() for p in vision_model.parameters())
+    feats_all = []
+
+    if test == True:
+        images = images[:batch_size]  # Only process the first batch for testing
+
+    for i in range(0, len(images), batch_size):
+        batch_images = images[i:i + batch_size]
+
+        inputs = proc(images=batch_images, return_tensors='pt')
+
+        inputs = { k: v.to(device)
+        for k, v in inputs.items()
+        }
+
+        with torch.no_grad():
+            outputs = vision_model(**inputs, output_hidden_states=True)
+            cls_layers = [h[:, 0, :] for h in outputs.hidden_states[1:] ]
+            features = torch.stack(cls_layers, dim=1)
+
+        feats_all.append(features.cpu())
+
+    meta_data = {
+        "model_name": model_name,
+        "modality": "image",
+        "num_params": num_params,
+        "num_samples": len(images),
+        "num_layers": features.shape[1],
+        "hidden_dim": features.shape[2],
+        "dtype": str(features.dtype),
+    }
+
+    return torch.cat(feats_all, dim=0), meta_data
+
+def run_extraction(model_names, df, device,modality, batch_size=1, test=False):
+    save_dataset_index(df, modality=modality)
+
+    for model_name in model_names:
+        print(f"\n Extracting features for model: {model_name}")
+        safe_model_name = model_name.replace("/", "__")
+        if check_prior_extraction(safe_model_name, modality):
+            print(f"Skipping {model_name} as features already extracted.")
+            continue
+
+        match modality:
+           case "image":
+                avg_feats, metadata = extract_image(df, model_name, device=device, batch_size=batch_size, cuda=torch.cuda.is_available(), test=test)
+           case "text":
+                avg_feats, metadata = extract_text(df, model_name,device=device, batch_size=batch_size, max_length=64, cuda=torch.cuda.is_available(), test=test)
+           case "speech":
+                print("Speech extraction not implemented yet.")
+                continue
+    
+        print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Num Params: {metadata['num_params']}")
+        
+        save_to_dir(avg_feats,metadata)
+
+    print(f"--- {modality} extraction test completed for all models.--- ")
+
+# Text
+# -----------------------
+
+def load_text_model(model_name, cuda=True):
+    ''' 
+    Adapted from Koepke: https://github.com/akoepke/cave_umwelten/blob/main/extract_features.py#L163
+
+    This function takes in the huggingface model name and returns the model along with its tokenizer.
+    Tokenizers are set to pad on the left and use eos tokens when tokens are not available.
+    It uses device, and returns hidden states for all layers.
+    '''
+
+    # need this to run locally, no issue on cuda
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    except ValueError:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
+
+    if "huggyllama" in model_name:
+        tokenizer.pad_token = "[PAD]"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    tokenizer.padding_side = "left"
+
+    if cuda == True:
+        offload_folder = OFF_LOAD_FOLDER_COLAB
+        os.makedirs(offload_folder, exist_ok=True)
+    else:
+        offload_folder = OFF_LOAD_FOLDER_LOCAL
+        os.makedirs(offload_folder, exist_ok=True)
+
+    dtype = torch.float16 #if check_bfloat16_support() else torch.float32 XXX cast back to 32 for analysis
+
+    print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
+
+    model = AutoModel.from_pretrained(
+        model_name,
+        output_hidden_states=True, # want all layers
+        dtype=dtype,#XXX double check if this is the best option for memory usage, could use float16 or bfloat16
+        device_map="auto",
+    )
+
+    model.eval()
+    # print(model.hf_device_map)
+
+    return tokenizer, model
+
 def extract_text(text_data, model_name, batch_size, max_length=512, test=True, cuda=True):
     '''
     This functions takes in the entire text corpus along with model name, batch_size, and the max_length (in tokens).
@@ -168,7 +255,6 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
 
             # pooled average
             feats = torch.stack(outputs["hidden_states"]).permute(1, 0, 2, 3)  # (B, L, T, D) - Batch, Layer, Token, Dim
-            print(f"Feats shape: {feats.shape} for batch {i} to {i + batch_size}")
             mask = batch["attention_mask"].unsqueeze(-1).unsqueeze(1)      # (B, 1, T, 1) 
             feats_avg = (feats * mask).sum(2) / mask.sum(2)
 
@@ -179,18 +265,11 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
             if test == True:
                 break  # Only process the first batch for testing
 
+    print(f"Avg Feats shape: {torch.stack(all_avg_feats).shape}")
     all_avg_feats = torch.cat(all_avg_feats, dim=0) #avg embedding over all layers, 1 sample
     # all_last_toks = torch.cat(all_last_toks, dim=0)
 
-    #  save space ------- 
-    del model
-    del tok
-    gc.collect()
-    torch.cuda.empty_cache()
-    # -------------------
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    clean_up(model, tok)
 
     meta_data = {
         "model_name": model_name,
@@ -204,35 +283,9 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
 
     return all_avg_feats, meta_data, #  all_last_toks,
 
-def check_prior_extraction(safe_model_name, modality):
-    # check if the directory with modality and model has files in it return boolean
-    save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features.pt"
-
-    if os.path.exists(save_path):
-        print(f"Features already extracted for {safe_model_name} in {modality}. Skipping extraction.")
-        return True
-    return False
-
-def test_text_extraction(model_names, texts_df, cuda= True, batch_size=1, max_length=64):
-    '''
-    This function tests the text extraction for a list of model names and a list of texts.
-    It prints the shape of the average and last layer features for each model.
-    '''
-    save_dataset_index(texts_df, modality="text")
-    for model_name in model_names:
-        print(f"\n Extracting features for model: {model_name}")
-        safe_model_name = model_name.replace("/", "__")
-        if check_prior_extraction(safe_model_name, "text"):
-            print(f"Skipping {model_name} as features already extracted.")
-            continue
-        avg_feats, metadata = extract_text(texts_df, model_name, batch_size=batch_size, max_length=max_length, cuda=cuda)
-        print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Num Params: {metadata['num_params']}")
-        
-        save_to_dir(avg_feats,metadata)
-
-    print("--- Text extraction test completed for all models.--- ")
 
 if __name__ == "__main__":
+
     df = build_flikr8k_text_audio_image()
 
     if torch.cuda.is_available():
@@ -244,18 +297,17 @@ if __name__ == "__main__":
     print(df.head())
 
     modelset = "test"
-    modality = "text"
+    modalities = ["text", "image", "speech"]
 
-    print(f"Running {modelset} {modality}: --------------------------------")
-    text_models = get_models(modelset, modality)
-    print(f"Text models: {text_models}")
+    for modality in modalities:
+        print(f"Running {modelset} {modality}: --------------------------------")
+        text_models = get_models(modelset, modality)
+        print(f"Text models: {text_models}")
 
-    text_df = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
-    
-    # set cuda true or false
-    cuda = torch.cuda.is_available()
+        df_copy = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
+        
+        run_extraction(text_models, df_copy, device=device, modality=modality, batch_size=24, test=False)
 
-    test_text_extraction(text_models, text_df, batch_size=8, max_length=64, cuda=cuda)
 
 
 

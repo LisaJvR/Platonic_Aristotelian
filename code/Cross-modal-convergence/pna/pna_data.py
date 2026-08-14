@@ -118,3 +118,16 @@ def build_flikr8k_text_audio_image():
 
     return all_df
 
+def get_image_files(image_ids):
+    # Get the paths to the Flickr8k dataset files
+    path, _ = get_flickr8k_dataset_paths()
+
+    # List all image files in the dataset directory
+    all_image_files = os.listdir(path)
+
+    # Filter the list to include only the specified image IDs
+    filtered_image_files = [
+        img_file for img_file in all_image_files if img_file in image_ids
+    ]
+
+    return filtered_image_files
