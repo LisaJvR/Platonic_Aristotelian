@@ -131,3 +131,41 @@ def get_image_files(image_ids):
     ]
 
     return filtered_image_files
+
+def load_embeddings(model_name, modality):
+    import torch
+
+    safe_model_name = model_name.replace("/", "__")
+    emb_dir = f"../embeddings/{modality}/{safe_model_name}/features.pt"
+    data = torch.load(emb_dir)
+    return data
+
+def print_meta_info(model_name, modality):
+    data = load_embeddings(model_name, modality)
+    print("Model:", data["metadata"]["model_name"])
+    print("Modality:", data["metadata"]["modality"])
+    print("Avg shape:", data["avg"].shape)
+    print("Avg dtype:", data["avg"].dtype)
+
+
+def get_captions_from_index(modality):
+    index = pd.read_csv(f"../embeddings/{modality}/dataset_index.csv")
+
+    dataset = pd.read_csv("../../data/flickr8k_audio_text_image.csv")
+
+    captions = []
+    for _, row in index.iterrows():
+        image_id = row["image"]
+        caption_number = row["caption_number"]
+
+        caption_row = dataset[
+            (dataset["image"] == image_id) &
+            (dataset["caption_number"] == caption_number)
+        ]
+
+        if not caption_row.empty:
+            captions.append(caption_row.iloc[0]["caption"])
+        else:
+            captions.append(None)
+
+    return captions

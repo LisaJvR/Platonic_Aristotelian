@@ -1,24 +1,17 @@
 from unittest import case
 
-from tqdm import trange
+from tqdm import tqdm, trange
 import torch
 import gc
-from transformers import AutoModel, AutoTokenizer, AutoModelForCausalLM, ViTImageProcessor, ViTModel
+from transformers import AutoModel, AutoTokenizer, AutoImageProcessor
 import os
 from pna_data import build_flikr8k_text_audio_image, get_image_files
 from pna_models import get_models
-import timm
-from timm.data import resolve_data_config, create_transform
 from torchvision.models.feature_extraction import create_feature_extractor
 
 EMB_DIR = "../embeddings"
 OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
 OFF_LOAD_FOLDER_LOCAL = "../../bin/offload"
-
-def check_bfloat16_support():
-    if not torch.cuda.is_available():
-        return False
-    return torch.cuda.get_device_capability(torch.cuda.current_device())[0] >= 7
 
 def save_to_dir(avg_features,meta_data):
     '''
@@ -92,25 +85,50 @@ def check_prior_extraction(safe_model_name, modality):
         return True
     return False
 
-def clean_up(model, tok):
-    del model
-    del tok
-    gc.collect()
-    if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+def check_device():
+    if  torch.cuda.is_available(): 
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available(): 
+        device = torch.device("mps")
+    else: 
+        device = torch.device("cpu")
 
+    return device
 # Image
 # -----------------------
 
-def load_img_models(model_name, device):
-    proc = ViTImageProcessor.from_pretrained(model_name)
-    vision_model = ViTModel.from_pretrained(model_name)
-    return proc,vision_model
+def load_img_models(model_name):
+    proc = AutoImageProcessor.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+    model = model.to(device).eval()
+    return proc, model
+
+def check_vision_hidden_states(model, outputs):
+
+    hs = outputs.hidden_states
+
+    print("Architecture:", model.__class__.__name__)
+    print("Config model_type:", model.config.model_type)
+    print("Configured layers:",
+          getattr(model.config, "num_hidden_layers", None))
+    print("Returned hidden states:", len(hs))
+
+    for i, h in enumerate(hs):
+        print(i, h.shape)
+
+    expected = getattr(model.config, "num_hidden_layers", None)
+
+    if expected is not None:
+        assert len(hs) == expected + 1, (
+            f"Expected {expected + 1} hidden states, "
+            f"got {len(hs)}"
+        )
 
 def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
+
     images = df["image"].tolist()
 
-    proc,vision_model = load_img_models(model_name, device)
+    proc, vision_model = load_img_models(model_name)
 
     num_params = sum(p.numel() for p in vision_model.parameters())
     feats_all = []
@@ -118,17 +136,15 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
     if test == True:
         images = images[:batch_size]  # Only process the first batch for testing
 
-    for i in range(0, len(images), batch_size):
+    for i in tqdm(range(0, len(images), batch_size), desc=f"Extracting {model_name}", unit="batch"):
         batch_images = images[i:i + batch_size]
 
         inputs = proc(images=batch_images, return_tensors='pt')
-
-        inputs = { k: v.to(device)
-        for k, v in inputs.items()
-        }
+        inputs = {k: v.to(device) for k, v in inputs.items()}
 
         with torch.no_grad():
             outputs = vision_model(**inputs, output_hidden_states=True)
+            check_vision_hidden_states(vision_model, outputs)
             cls_layers = [h[:, 0, :] for h in outputs.hidden_states[1:] ]
             features = torch.stack(cls_layers, dim=1)
 
@@ -144,14 +160,21 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
         "dtype": str(features.dtype),
     }
 
+    del features, num_params, proc, vision_model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     return torch.cat(feats_all, dim=0), meta_data
 
-def run_extraction(model_names, df, device,modality, batch_size=1, test=False):
+def run_extraction(model_names, df,modality, batch_size=1, test=False):
     save_dataset_index(df, modality=modality)
 
     for model_name in model_names:
         print(f"\n Extracting features for model: {model_name}")
         safe_model_name = model_name.replace("/", "__")
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if check_prior_extraction(safe_model_name, modality):
             print(f"Skipping {model_name} as features already extracted.")
             continue
@@ -160,7 +183,7 @@ def run_extraction(model_names, df, device,modality, batch_size=1, test=False):
            case "image":
                 avg_feats, metadata = extract_image(df, model_name, device=device, batch_size=batch_size, cuda=torch.cuda.is_available(), test=test)
            case "text":
-                avg_feats, metadata = extract_text(df, model_name,device=device, batch_size=batch_size, max_length=64, cuda=torch.cuda.is_available(), test=test)
+                avg_feats, metadata = extract_text(df, model_name, batch_size=batch_size, max_length=64, cuda=torch.cuda.is_available(), test=test)
            case "speech":
                 print("Speech extraction not implemented yet.")
                 continue
@@ -170,7 +193,6 @@ def run_extraction(model_names, df, device,modality, batch_size=1, test=False):
         save_to_dir(avg_feats,metadata)
 
     print(f"--- {modality} extraction test completed for all models.--- ")
-
 # Text
 # -----------------------
 
@@ -203,7 +225,8 @@ def load_text_model(model_name, cuda=True):
         offload_folder = OFF_LOAD_FOLDER_LOCAL
         os.makedirs(offload_folder, exist_ok=True)
 
-    dtype = torch.float16 #if check_bfloat16_support() else torch.float32 XXX cast back to 32 for analysis
+    device = check_device()
+    dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
 
     print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
 
@@ -215,7 +238,6 @@ def load_text_model(model_name, cuda=True):
     )
 
     model.eval()
-    # print(model.hf_device_map)
 
     return tokenizer, model
 
@@ -229,8 +251,11 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
     and the number of parameters in the model.
     '''
         # texts data: image caption_number caption
+    device = check_device()
+
     text = text_data["caption"].tolist()
     tok, model = load_text_model(model_name, cuda=cuda) # returns eval model
+
     num_params = sum(p.numel() for p in model.parameters())
 
     # tokenize all the texts at once
@@ -240,13 +265,13 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
         max_length=max_length # not essential for all to have same lenth for pooling.
     )
 
-    device = next(model.parameters()).device
+    device = next(model.parameters()).device #XXX redundant, but ensures model and tokens are on same device
 
     all_avg_feats = []
-    # all_last_toks = []
 
     print(f"Extracting features for {len(text)} texts in batches of {batch_size}...")
-    for i in trange(0, len(text), batch_size):
+    for i in tqdm( range(0, len(text), batch_size), desc=f"Extracting {model_name}",
+    unit="batch"):
 
         # automatically handles different representations and additional fields
         batch = {k: v[i:i + batch_size].to(device) for k, v in tokenized.items()} 
@@ -254,22 +279,46 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
             outputs = model(**batch) #XXX check if this breaks, could use batch['input_ids'] and batch['attention_mask'] instead of **batch
 
             # pooled average
-            feats = torch.stack(outputs["hidden_states"]).permute(1, 0, 2, 3)  # (B, L, T, D) - Batch, Layer, Token, Dim
-            mask = batch["attention_mask"].unsqueeze(-1).unsqueeze(1)      # (B, 1, T, 1) 
+            feats = torch.stack(outputs["hidden_states"]).permute(1, 0, 2, 3)  # (B, L, T, D) 
+            mask = batch["attention_mask"].unsqueeze(-1).unsqueeze(1)  # (B, 1, T, 1) 
             feats_avg = (feats * mask).sum(2) / mask.sum(2)
+
+            attention_mask = batch["attention_mask"]
+
+            if (attention_mask.sum(dim=1) == 0).any():
+                print("ZERO-LENGTH ATTENTION MASK!")
+
+            real_tokens = attention_mask[:, None, :, None].bool()
+            real_tokens = real_tokens.expand_as(feats)
+
+            if  torch.isnan(feats)[real_tokens].sum().item() > 0:
+                print(
+                    "NaNs in REAL token positions:",
+                    torch.isnan(feats)[real_tokens].sum().item()
+                )
+
+            if  torch.isnan(feats)[~real_tokens].sum().item() > 0:
+                print(
+                    "NaNs in PAD token positions:",
+                    torch.isnan(feats)[~real_tokens].sum().item()
+                )
 
             # toks_last = feats[:, :, -1, :]  # (B, L, [T],  D) # last layer token (captures all the info from previous tokens)
             all_avg_feats.append(feats_avg.cpu())
-            # all_last_toks.append(toks_last.cpu())
+
+            del outputs, feats, feats_avg, batch, mask
 
             if test == True:
-                break  # Only process the first batch for testing
+                break 
 
-    print(f"Avg Feats shape: {torch.stack(all_avg_feats).shape}")
-    all_avg_feats = torch.cat(all_avg_feats, dim=0) #avg embedding over all layers, 1 sample
-    # all_last_toks = torch.cat(all_last_toks, dim=0)
+    all_avg_feats = torch.cat(all_avg_feats, dim=0)
+    print(f"Avg Feats shape: {all_avg_feats.shape}")
 
-    clean_up(model, tok)
+    del model
+    del tok
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     meta_data = {
         "model_name": model_name,
@@ -281,8 +330,7 @@ def extract_text(text_data, model_name, batch_size, max_length=512, test=True, c
         "dtype": str(all_avg_feats.dtype),
     }
 
-    return all_avg_feats, meta_data, #  all_last_toks,
-
+    return all_avg_feats, meta_data
 
 if __name__ == "__main__":
 
@@ -298,17 +346,13 @@ if __name__ == "__main__":
 
     modelset = "test"
     modalities = ["text", "image", "speech"]
+    modalities = ["text"]
 
     for modality in modalities:
         print(f"Running {modelset} {modality}: --------------------------------")
-        text_models = get_models(modelset, modality)
-        print(f"Text models: {text_models}")
+        models = get_models(modelset, modality)
+        print(f"Models: {models}")
 
         df_copy = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
         
-        run_extraction(text_models, df_copy, device=device, modality=modality, batch_size=24, test=False)
-
-
-
-
-
+        run_extraction(models, df_copy, modality=modality, batch_size=16, test=False)
