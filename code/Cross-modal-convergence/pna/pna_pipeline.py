@@ -315,12 +315,12 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
             if len(chunk_feats) == chunk_size:
                 chunk_tensor = torch.cat(chunk_feats, dim=0)
 
-                save_to_dir(avg_features=feats_avg, meta_data={
+                save_to_dir(avg_features=chunk_tensor, meta_data={
                     "model_name": model_name,
                     "modality": "text",
                     "num_params": num_params,
                     "chunk_number": c_index,
-                    "dtype": str(feats_avg.dtype),
+                    "dtype": str(chunk_tensor.dtype),
                 },batch_num=c_index) #XXX save the last meta data only? or seperately?
 
                 c_index +=1
