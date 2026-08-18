@@ -81,7 +81,7 @@ def save_dataset_index(df, modality):
 
 def check_prior_extraction(safe_model_name, modality):
     # check if the directory with modality and model has files in it return boolean
-    save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features.pt"
+    save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features_9.pt"
 
     if os.path.exists(save_path):
         print(f"Features already extracted for {safe_model_name} in {modality}. Skipping extraction.")
@@ -97,6 +97,7 @@ def check_device():
         device = torch.device("cpu")
 
     return device
+
 # Image
 # -----------------------
 
@@ -146,13 +147,16 @@ def check_vision_hidden_states(model, outputs):
         )
 
 def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
-
     images = df["image"].tolist()
-
     proc, vision_model = load_img_models(model_name)
 
     num_params = sum(p.numel() for p in vision_model.parameters())
-    feats_all = []
+
+    if batch_size == 32: chunk_size = 125 
+    if batch_size == 16: chunk_size = 250
+
+    chunk_feats = []
+    c_index = 0
 
     if test == True:
         images = images[:batch_size]  # Only process the first batch for testing
@@ -169,24 +173,42 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
             cls_layers = [h[:, 0, :] for h in outputs.hidden_states[1:] ]
             features = torch.stack(cls_layers, dim=1)
 
-        feats_all.append(features.cpu())
+            chunk_feats.append(features.cpu())
+            del outputs, features, inputs
 
-    meta_data = {
-        "model_name": model_name,
-        "modality": "image",
-        "num_params": num_params,
-        "num_samples": len(images),
-        "num_layers": features.shape[1],
-        "hidden_dim": features.shape[2],
-        "dtype": str(features.dtype),
-    }
+            if len(chunk_feats) == chunk_size:
+                chunk_tensor = torch.cat(chunk_feats, dim=0)
+            
+                save_to_dir(avg_features=chunk_tensor, meta_data={
+                    "model_name": model_name,
+                    "modality": "image",
+                    "num_params": num_params,
+                    "chunk_number": c_index,
+                    "dtype": str(chunk_tensor.dtype),
+                } , batch_num=c_index)
+
+                c_index +=1
+                del chunk_feats, chunk_tensor
+                chunk_feats = []
+
+            if test == True: break 
+
+    if len(chunk_feats) > 0:
+            chunk_tensor = torch.cat(chunk_feats, dim=0)
+            save_to_dir(avg_features=chunk_tensor, meta_data={
+                "model_name": model_name,
+                "modality": "image",
+                "num_params": num_params,
+                "chunk_number": c_index,
+                "dtype": str(chunk_tensor.dtype),
+            },batch_num=c_index)
 
     del features, num_params, proc, vision_model
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return torch.cat(feats_all, dim=0), meta_data
+    return None
 
 def run_extraction(model_names, df,modality, batch_size=1, test=False):
     save_dataset_index(df, modality=modality)
@@ -203,7 +225,7 @@ def run_extraction(model_names, df,modality, batch_size=1, test=False):
 
         match modality:
            case "image":
-                avg_feats, metadata = extract_image(df, model_name, device=device, batch_size=batch_size, cuda=torch.cuda.is_available(), test=test)
+                extract_image(df, model_name, device=device, batch_size=batch_size, cuda=torch.cuda.is_available(), test=test)
            case "text":
                 extract_text(df, model_name, device=device, batch_size=batch_size, max_length=64, cuda=torch.cuda.is_available(), test=test)
            case "speech":
@@ -211,8 +233,6 @@ def run_extraction(model_names, df,modality, batch_size=1, test=False):
                 continue
     
         print(f"Model: {model_name} done.")
-        
-        # save_to_dir(avg_feats,metadata)
 
     print(f"--- {modality} extraction test completed for all models.--- ")
 
@@ -287,11 +307,13 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
 
     device = next(model.parameters()).device #XXX redundant, but ensures model and tokens are on same device
 
-    chunk_size = 125 
+    # files saved must contain same embeddings from same samples.
+    if batch_size == 32: chunk_size = 125 
+    if batch_size == 16: chunk_size = 250
+
     chunk_feats = []
     c_index = 0
 
-    print(f"Extracting features for {len(text)} texts in batches of {batch_size}...")
     for i in tqdm( range(0, len(text), batch_size), desc=f"Extracting {model_name}",
     unit="batch"):
 
@@ -300,7 +322,6 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
         with torch.no_grad():
             outputs = model(**batch) #XXX check if this breaks, could use batch['input_ids'] and batch['attention_mask'] instead of **batch
 
-            # pooled average
             feats = torch.stack(outputs["hidden_states"]).permute(1, 0, 2, 3)  # (B, L, T, D) 
             mask = batch["attention_mask"].unsqueeze(-1).unsqueeze(1)  # (B, 1, T, 1) 
             feats_avg = (feats * mask).sum(2) / mask.sum(2)
@@ -310,7 +331,6 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
 
             chunk_feats.append(feats_avg.cpu())
             del outputs, feats, feats_avg, batch, mask
-            # toks_last = feats[:, :, -1, :]  # (B, L, [T],  D) # last layer token (captures all the info from previous tokens)
 
             if len(chunk_feats) == chunk_size:
                 chunk_tensor = torch.cat(chunk_feats, dim=0)
@@ -321,7 +341,7 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
                     "num_params": num_params,
                     "chunk_number": c_index,
                     "dtype": str(chunk_tensor.dtype),
-                },batch_num=c_index) #XXX save the last meta data only? or seperately?
+                } , batch_num=c_index)
 
                 c_index +=1
                 del chunk_feats, chunk_tensor
@@ -339,8 +359,7 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
             "dtype": str(chunk_tensor.dtype),
         },batch_num=c_index)
 
-    del model
-    del tok
+    del model, tok
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
