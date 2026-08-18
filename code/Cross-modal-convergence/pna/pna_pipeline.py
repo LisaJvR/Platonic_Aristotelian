@@ -205,12 +205,12 @@ def run_extraction(model_names, df,modality, batch_size=1, test=False):
            case "image":
                 avg_feats, metadata = extract_image(df, model_name, device=device, batch_size=batch_size, cuda=torch.cuda.is_available(), test=test)
            case "text":
-                avg_feats, metadata = extract_text(df, model_name, device=device, batch_size=batch_size, max_length=64, cuda=torch.cuda.is_available(), test=test)
+                extract_text(df, model_name, device=device, batch_size=batch_size, max_length=64, cuda=torch.cuda.is_available(), test=test)
            case "speech":
                 print("Speech extraction not implemented yet.")
                 continue
     
-        print(f"Model: {model_name}, Avg Feats Shape: {avg_feats.shape}, Num Params: {metadata['num_params']}")
+        print(f"Model: {model_name} done.")
         
         # save_to_dir(avg_feats,metadata)
 
@@ -287,6 +287,10 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
 
     device = next(model.parameters()).device #XXX redundant, but ensures model and tokens are on same device
 
+    chunk_size = 125 
+    chunk_feats = []
+    c_index = 0
+
     print(f"Extracting features for {len(text)} texts in batches of {batch_size}...")
     for i in tqdm( range(0, len(text), batch_size), desc=f"Extracting {model_name}",
     unit="batch"):
@@ -304,25 +308,44 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
             if torch.isnan(feats_avg).any():
                 print(f"NaNs in pooled features at batch {i // batch_size}")
 
-            # toks_last = feats[:, :, -1, :]  # (B, L, [T],  D) # last layer token (captures all the info from previous tokens)
-            save_to_dir(avg_features=feats_avg, meta_data={
-                "model_name": model_name,
-                "modality": "text",
-                "num_params": num_params,
-                "batch_number": i // batch_size,
-                "dtype": str(feats_avg.dtype),
-            }, batch_num=i // batch_size) #XXX save the last meta data only? or seperately?
-
+            chunk_feats.append(feats_avg.cpu())
             del outputs, feats, feats_avg, batch, mask
+            # toks_last = feats[:, :, -1, :]  # (B, L, [T],  D) # last layer token (captures all the info from previous tokens)
 
-            if test == True:
-                break 
+            if len(chunk_feats) == chunk_size:
+                chunk_tensor = torch.cat(chunk_feats, dim=0)
+
+                save_to_dir(avg_features=feats_avg, meta_data={
+                    "model_name": model_name,
+                    "modality": "text",
+                    "num_params": num_params,
+                    "chunk_number": c_index,
+                    "dtype": str(feats_avg.dtype),
+                },batch_num=c_index) #XXX save the last meta data only? or seperately?
+
+                c_index +=1
+                del chunk_feats, chunk_tensor
+                chunk_feats = []
+
+            if test == True: break 
+
+    if len(chunk_feats) > 0:
+        chunk_tensor = torch.cat(chunk_feats, dim=0)
+        save_to_dir(avg_features=chunk_tensor, meta_data={
+            "model_name": model_name,
+            "modality": "text",
+            "num_params": num_params,
+            "chunk_number": c_index,
+            "dtype": str(chunk_tensor.dtype),
+        },batch_num=c_index)
 
     del model
     del tok
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+    return None
 
 if __name__ == "__main__":
 
