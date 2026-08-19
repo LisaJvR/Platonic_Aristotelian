@@ -17,7 +17,6 @@ MODELSETS = {
             "huggyllama/llama-65b", # P 
 
             # Platonic 
-            
             "google/gemma-2b",# P
             "google/gemma-7b",# P
             "mistralai/Mistral-7B-v0.1",# P
@@ -87,28 +86,27 @@ MODELSETS = {
     
     "test": {
         "text": [
-            # Platonic model family (Fig 3 - compare image to 3 family of text models)
-            "bigscience/bloom-560m",# P
-            "bigscience/bloom-1b1",# P
-            "bigscience/bloom-1b7",# P
-            "bigscience/bloom-3b",# P
-            "bigscience/bloom-7b1",# P
-            "openlm-research/open_llama_3b",# P
-            "openlm-research/open_llama_7b",# P
+            "bigscience/bloom-560m",
+            # "bigscience/bloom-1b1",
+            # "bigscience/bloom-1b7",
+            # "bigscience/bloom-3b",
+            # "bigscience/bloom-7b1",
+            # "openlm-research/open_llama_3b",
+            # "openlm-research/open_llama_7b",
             # "openlm-research/open_llama_13b",# P
-            "huggyllama/llama-7b",# P 
+            # "huggyllama/llama-7b",
             # "huggyllama/llama-13b",# P
             
             # Platonic 
-            "google/gemma-2b",# P
-            "google/gemma-7b",# P
-            "mistralai/Mistral-7B-v0.1",# P
-            "mistralai/Mixtral-8x7B-v0.1",# P
-            "allenai/OLMo-1B-hf",# P
-            "allenai/OLMo-7B-hf",# P
+            "google/gemma-2b",
+            # "google/gemma-7b",# P
+            # "mistralai/Mistral-7B-v0.1",# P
+            # "mistralai/Mixtral-8x7B-v0.1",# P
+            # "allenai/OLMo-1B-hf",# P
+            # "allenai/OLMo-7B-hf",# P
     
-            "NousResearch/Meta-Llama-3-8B",##         
-            "facebook/data2vec-text-base", # have data2vec audio later
+            # "NousResearch/Meta-Llama-3-8B",##         
+            # "facebook/data2vec-text-base", # have data2vec audio later
         ],
         "image": [
             "vit_base_patch16_224.augreg_in21k",

@@ -40,6 +40,10 @@ def save_to_dir(avg_features,meta_data, batch_num=None):
         print(f"Saved features to: {dir_path}/features_all.pt")
 
 def save_dataset_index(df, modality):
+    if f"{EMB_DIR}/{modality}/dataset_index.csv" in os.listdir(f"{EMB_DIR}/{modality}"):
+        print(f"Dataset index for {modality} already exists. Skipping save.")
+        return
+    
     if modality == "text":
         index_df = (
         df[["image", "caption_number"]]
