@@ -1,13 +1,12 @@
 from unittest import case
-
 from tqdm import tqdm, trange
 import torch
 import gc
+import torchvision
 from transformers import AutoModel, AutoTokenizer, AutoImageProcessor
 import os
 from pna_data import build_flikr8k_text_audio_image, get_image_files
 from pna_models import get_models
-from torchvision.models.feature_extraction import create_feature_extractor
 
 EMB_DIR = "../embeddings"
 OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
@@ -40,6 +39,8 @@ def save_to_dir(avg_features,meta_data, batch_num=None):
         print(f"Saved features to: {dir_path}/features_all.pt")
 
 def save_dataset_index(df, modality):
+    if f"{EMB_DIR}/{modality}" not in os.listdir(EMB_DIR):
+        os.makedirs(f"{EMB_DIR}/{modality}", exist_ok=True)
     if f"{EMB_DIR}/{modality}/dataset_index.csv" in os.listdir(f"{EMB_DIR}/{modality}"):
         print(f"Dataset index for {modality} already exists. Skipping save.")
         return
@@ -318,7 +319,7 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
     chunk_feats = []
     c_index = 0
 
-    for i in tqdm( range(0, len(text), batch_size), desc=f"Extracting {model_name}",
+    for i in tqdm(range(0, len(text), batch_size), desc=f"Extracting {model_name}",
     unit="batch"):
 
         # automatically handles different representations and additional fields
@@ -332,6 +333,7 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
 
             if torch.isnan(feats_avg).any():
                 print(f"NaNs in pooled features at batch {i // batch_size}")
+                return None
 
             chunk_feats.append(feats_avg.cpu())
             del outputs, feats, feats_avg, batch, mask
@@ -384,7 +386,7 @@ if __name__ == "__main__":
 
     modelset = "test"
     modalities = ["text", "image", "speech"]
-    modalities = ["text"]
+    modalities = ["image"]
 
     for modality in modalities:
         print(f"Running {modelset} {modality}: --------------------------------")
@@ -393,4 +395,4 @@ if __name__ == "__main__":
 
         df_copy = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
         
-        run_extraction(models, df_copy, modality=modality, batch_size=16, test=False)
+        run_extraction(models, df_copy, modality=modality, batch_size=8, test=True)
