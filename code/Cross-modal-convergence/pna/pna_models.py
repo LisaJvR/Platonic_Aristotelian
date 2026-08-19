@@ -87,26 +87,26 @@ MODELSETS = {
     "test": {
         "text": [
             "bigscience/bloom-560m",
-            # "bigscience/bloom-1b1",
-            # "bigscience/bloom-1b7",
-            # "bigscience/bloom-3b",
-            # "bigscience/bloom-7b1",
-            # "openlm-research/open_llama_3b",
-            # "openlm-research/open_llama_7b",
-            # "openlm-research/open_llama_13b",# P
-            # "huggyllama/llama-7b",
-            # "huggyllama/llama-13b",# P
+            "bigscience/bloom-1b1",
+            "bigscience/bloom-1b7",
+            # "bigscience/bloom-3b", #done
+            "bigscience/bloom-7b1",
+            # "openlm-research/open_llama_3b", #done
+            "openlm-research/open_llama_7b",
+            # "openlm-research/open_llama_13b",# skipped
+            "huggyllama/llama-7b",
+            # "huggyllama/llama-13b",# skipped
             
             # Platonic 
             "google/gemma-2b",
-            # "google/gemma-7b",# P
-            # "mistralai/Mistral-7B-v0.1",# P
-            # "mistralai/Mixtral-8x7B-v0.1",# P
-            # "allenai/OLMo-1B-hf",# P
-            # "allenai/OLMo-7B-hf",# P
+            "google/gemma-7b",# P
+            "mistralai/Mistral-7B-v0.1",# P
+            # "mistralai/Mixtral-8x7B-v0.1",# skipped
+            "allenai/OLMo-1B-hf",# P
+            "allenai/OLMo-7B-hf",# P
     
-            # "NousResearch/Meta-Llama-3-8B",##         
-            # "facebook/data2vec-text-base", # have data2vec audio later
+            "NousResearch/Meta-Llama-3-8B",##         
+            "facebook/data2vec-text-base", # have data2vec audio later
         ],
         "image": [
             "vit_base_patch16_224.augreg_in21k",
