@@ -86,9 +86,9 @@ MODELSETS = {
     
     "test": {
         "text": [
-            "bigscience/bloom-560m",
-            "bigscience/bloom-1b1",
-            "bigscience/bloom-1b7",
+            # "bigscience/bloom-560m",#done
+            # "bigscience/bloom-1b1",#done
+            # "bigscience/bloom-1b7",#done
             # "bigscience/bloom-3b", #done
             "bigscience/bloom-7b1",
             # "openlm-research/open_llama_3b", #done
@@ -109,11 +109,11 @@ MODELSETS = {
             "facebook/data2vec-text-base", # have data2vec audio later
         ],
         "image": [
-            "vit_base_patch16_224.augreg_in21k",
-            "vit_base_patch16_224.mae",
-            "vit_base_patch14_dinov2.lvd142m",
-            "vit_base_patch16_clip_224.laion2b",
-            "vit_base_patch16_clip_224.laion2b_ft_in12k",
+            "timm/vit_base_patch16_224.augreg_in21k",
+            "timm/vit_base_patch16_224.mae",
+            "timm/vit_base_patch14_dinov2.lvd142m",
+            "timm/vit_base_patch16_clip_224.laion2b",
+            "timm/vit_base_patch16_clip_224.laion2b_ft_in12k",
             "facebook/data2vec-vision-base",
         ],
         "speech": [
