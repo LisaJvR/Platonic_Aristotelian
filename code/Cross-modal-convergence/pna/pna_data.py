@@ -1,72 +1,22 @@
 import kagglehub
 import pandas as pd
 import os
+import PIL
+from PIL import Image
 
 
-# Flickr8k Image Caption Dataset
-# ------------------------------
-# The Flickr8k dataset is a benchmark for image captioning and image-text
-# retrieval. It contains 8,000 natural images, each paired with five
-# independently written captions describing the main objects, actions,
-# and events in the scene.
-#
-# Dataset characteristics:
-# - Images: 8,000
-# - Captions per image: 5
-# - Total captions: 40,000
-#
-# The images were collected from Flickr and selected from six different
-# Flickr groups. They were manually chosen to represent a diverse range
-# of everyday scenes while generally avoiding famous people and landmarks.
-#
-# Common files:
-# - Flickr8k.token.txt      : All image-caption pairs.
-# - Flickr_8k.trainImages.txt : Training image split.
-# - Flickr_8k.devImages.txt   : Validation (development) image split.
-# - Flickr_8k.testImages.txt  : Test image split.
-#
-# The dataset is widely used for evaluating image captioning, cross-modal
-# retrieval, and vision-language representation learning models.
 path = kagglehub.dataset_download("adityajn105/flickr8k") # Flickr 8k Dataset
-
-
-# Flickr8k Audio Caption Dataset
-# ------------------------------
-# This dataset contains 40,000 spoken audio captions (.wav), corresponding to
-# the five captions for each image in the Flickr8k dataset across the original
-# train, validation, and test splits.
-#
-# Audio specifications:
-# - Format: Microsoft WAVE (.wav)
-# - Sample rate: 16,000 Hz
-# - Bit depth: 16-bit
-#
-# Metadata files:
-# - wav2capt.txt : Maps each audio file to its corresponding Flickr8k image
-#                  (.jpg) and caption index.
-# - Flickr8k.token.txt : Contains the text of each caption, allowing the
-#                        image and caption index from wav2capt.txt to be
-#                        resolved to the original caption text.
-# - wav2spk.txt : Maps each audio file to its speaker ID. There are
-#                 183 unique speakers in total.
-#
-# Total audio files: 40,000
-# Unique speakers: 183
 path_audio = kagglehub.dataset_download("warcoder/flickr-8k-audio-caption-corpus")
-
-# print("Path to dataset files:", path)
-print("Path to dataset files:", path_audio)
-
-
 token_text_path = kagglehub.dataset_download("sealeopard/flickr8k-token-txt")
 
 df_path = "../../data/flickr8k_audio_text_image.csv"
 
+print("Path to image files:", path)
+print("Path to dataset files:", path_audio)
 print("Path to token_file files:", token_text_path)
 
 def get_flickr8k_dataset_paths():
     return path, path_audio
-
 
 def build_flikr8k_text_audio_image():
     # Get the paths to the Flickr8k dataset files
@@ -119,25 +69,31 @@ def build_flikr8k_text_audio_image():
     return all_df
 
 def get_image_files(image_ids):
-    # Get the paths to the Flickr8k dataset files
     path, _ = get_flickr8k_dataset_paths()
+    image_dir = os.path.join(path, "Images")
 
-    # List all image files in the dataset directory
-    all_image_files = os.listdir(path)
+    images = []
+    for image_id in image_ids:
+        img_path = os.path.join(image_dir, image_id)
+        try:
+            with Image.open(img_path) as img:
+                img.verify()
+            images.append(img_path)
 
-    # Filter the list to include only the specified image IDs
-    filtered_image_files = [
-        img_file for img_file in all_image_files if img_file in image_ids
-    ]
+        except (IOError, SyntaxError, FileNotFoundError) as e:
+            print(
+                f"Warning: {image_id} is not a valid image file. "
+                f"Error: {e}"
+            )
+    return images
 
-    return filtered_image_files
-
-def load_embeddings(model_name, modality):
+def load_embeddings(model_name, modality, chunk_num=0):
     import torch
 
     safe_model_name = model_name.replace("/", "__")
-    emb_dir = f"../embeddings/{modality}/{safe_model_name}/features.pt"
+    emb_dir = f"../embeddings/{modality}/{safe_model_name}/features_{chunk_num}.pt"
     data = torch.load(emb_dir)
+
     return data
 
 def print_meta_info(model_name, modality):
@@ -149,23 +105,16 @@ def print_meta_info(model_name, modality):
 
 
 def get_captions_from_index(modality):
-    index = pd.read_csv(f"../embeddings/{modality}/dataset_index.csv")
-
+    index_df = pd.read_csv(f"../embeddings/{modality}/dataset_index.csv")
     dataset = pd.read_csv("../../data/flickr8k_audio_text_image.csv")
 
-    captions = []
-    for _, row in index.iterrows():
-        image_id = row["image"]
-        caption_number = row["caption_number"]
+    index_df = index_df.reset_index(names="embedding_index")
 
-        caption_row = dataset[
-            (dataset["image"] == image_id) &
-            (dataset["caption_number"] == caption_number)
-        ]
+    mapped_df = index_df.merge(
+        dataset[["image", "caption_number", "caption"]],
+        on=["image", "caption_number"],
+        how="left",
+        validate="one_to_one"
+    )
 
-        if not caption_row.empty:
-            captions.append(caption_row.iloc[0]["caption"])
-        else:
-            captions.append(None)
-
-    return captions
+    return mapped_df # returns: embedding_index, image, caption_number, caption

@@ -1,12 +1,16 @@
+from PIL import Image
 from unittest import case
 from tqdm import tqdm, trange
 import torch
 import gc
 import torchvision
-from transformers import AutoModel, AutoTokenizer, AutoImageProcessor
+from transformers import AutoModel, AutoTokenizer, AutoImageProcessor, ViTImageProcessor, ViTModel
 import os
 from pna_data import build_flikr8k_text_audio_image, get_image_files
 from pna_models import get_models
+import timm
+from timm.data import resolve_data_config, create_transform
+from torchvision.models.feature_extraction import create_feature_extractor
 
 EMB_DIR = "../embeddings"
 OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
@@ -20,8 +24,7 @@ def save_to_dir(avg_features,meta_data, batch_num=None):
     safe_model_name = meta_data["model_name"].replace("/", "__")
 
     dir_path = os.path.join(
-        EMB_DIR,
-        meta_data["modality"], safe_model_name
+        EMB_DIR, meta_data["modality"], safe_model_name
     )
 
     os.makedirs(dir_path, exist_ok=True)
@@ -84,9 +87,9 @@ def save_dataset_index(df, modality):
         )
         print(f"Saved speech dataset index to: {EMB_DIR}/speech/dataset_index.csv")
 
-def check_prior_extraction(safe_model_name, modality):
+def check_prior_extraction(safe_model_name, modality, chunk):
     # check if the directory with modality and model has files in it return boolean
-    save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features_9.pt"
+    save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features_{chunk}.pt"
 
     if os.path.exists(save_path):
         print(f"Features already extracted for {safe_model_name} in {modality}. Skipping extraction.")
@@ -107,16 +110,16 @@ def check_device():
 # -----------------------
 
 def load_img_models(model_name):
-    proc = AutoImageProcessor.from_pretrained(model_name)
-
     device = check_device()
-    dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
+    # dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
+    dtype = torch.float32
 
-    model = AutoModel.from_pretrained(
-        model_name, 
-        dtype=dtype, 
-        output_hidden_states=True, 
-        device_map="auto")
+    model = timm.create_model( model_name, pretrained=True)
+
+    transform = create_transform(
+        **resolve_data_config(model.pretrained_cfg, model=model),
+        is_training=False
+    )
 
     if device.type == "cuda":
         offload_folder = OFF_LOAD_FOLDER_COLAB
@@ -127,56 +130,75 @@ def load_img_models(model_name):
 
     print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
 
-    model = model.to(device).eval()
-    return proc, model
+    model = model.to(device, dtype=dtype).eval()
+    return transform, model, dtype
 
 def check_vision_hidden_states(model, outputs):
-
-    hs = outputs.hidden_states
+    all_hs = outputs.hidden_states
+    block_hs = all_hs[1:]
 
     print("Architecture:", model.__class__.__name__)
     print("Config model_type:", model.config.model_type)
-    print("Configured layers:",
-          getattr(model.config, "num_hidden_layers", None))
-    print("Returned hidden states:", len(hs))
+    print(
+        "Configured layers:",
+        getattr(model.config, "num_hidden_layers", None)
+    )
+    print("Total returned hidden states:", len(all_hs))
+    print("Block hidden states:", len(block_hs))
 
-    for i, h in enumerate(hs):
-        print(i, h.shape)
+    for i, h in enumerate(all_hs):
+        print(f"Hidden state {i}: {tuple(h.shape)}")
+
+        if h.ndim != 3:
+            return False
 
     expected = getattr(model.config, "num_hidden_layers", None)
 
     if expected is not None:
-        assert len(hs) == expected + 1, (
-            f"Expected {expected + 1} hidden states, "
-            f"got {len(hs)}"
+        assert len(block_hs) == expected, (
+            f"Expected {expected} transformer block outputs, "
+            f"got {len(block_hs)}"
         )
 
-def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
-    images = df["image"].tolist()
-    proc, vision_model = load_img_models(model_name)
+    return True
 
+'''
+Adapted from Koepke: https://github.com/akoepke/cave_umwelten/blob/main/extract_features.py
+'''
+def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
+    # unique images
+    image_paths = get_image_files(df["image"].unique().tolist())
+
+    transform, vision_model, dtype = load_img_models(model_name)
+
+    num_blocks = len(vision_model.blocks)
     num_params = sum(p.numel() for p in vision_model.parameters())
 
-    if batch_size == 32: chunk_size = 125 
-    if batch_size == 16: chunk_size = 250
+    block_ids = list(range(num_blocks))
+    return_nodes = [f"blocks.{i}.add_1" for i in block_ids]
+
+    vision_model = create_feature_extractor(vision_model, return_nodes=return_nodes)
+
+    chunk_size = max(1, 800 // batch_size) 
 
     chunk_feats = []
     c_index = 0
 
     if test == True:
-        images = images[:batch_size]  # Only process the first batch for testing
+        image_paths = image_paths[:batch_size]
 
-    for i in tqdm(range(0, len(images), batch_size), desc=f"Extracting {model_name}", unit="batch"):
-        batch_images = images[i:i + batch_size]
+    for i in tqdm(range(0, len(image_paths), batch_size), desc=f"Extracting {model_name}", unit="batch"):
 
-        inputs = proc(images=batch_images, return_tensors='pt')
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        batch_image_paths = image_paths[i:i + batch_size]
+        batch_images = [Image.open(img_path).convert("RGB") for img_path in batch_image_paths]
+
+        inputs = torch.stack([transform(img) for img in batch_images]).to(device=device, dtype=dtype)
 
         with torch.no_grad():
-            outputs = vision_model(**inputs, output_hidden_states=True)
-            check_vision_hidden_states(vision_model, outputs)
-            cls_layers = [h[:, 0, :] for h in outputs.hidden_states[1:] ]
-            features = torch.stack(cls_layers, dim=1)
+            outputs = vision_model(inputs)
+
+            cls_layers = [h[:, 0, :] for h in outputs.values()] 
+            features = torch.stack(cls_layers).permute(1, 0, 2) # B, L, D
 
             chunk_feats.append(features.cpu())
             del outputs, features, inputs
@@ -208,7 +230,7 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
                 "dtype": str(chunk_tensor.dtype),
             },batch_num=c_index)
 
-    del features, num_params, proc, vision_model
+    del chunk_feats, num_params, vision_model
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -224,8 +246,13 @@ def run_extraction(model_names, df,modality, batch_size=1, test=False):
 
         device = check_device()
 
-        if check_prior_extraction(safe_model_name, modality):
-            print(f"Skipping {model_name} as features already extracted.")
+        if test == True:
+            chunk = 0
+        else:
+            chunk = 9
+
+        if check_prior_extraction(safe_model_name, modality, chunk):
+            print(f"Skipping {model_name} (chunk {chunk}) as features already extracted.")
             continue
 
         match modality:
@@ -312,9 +339,7 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
 
     device = next(model.parameters()).device #XXX redundant, but ensures model and tokens are on same device
 
-    # files saved must contain same embeddings from same samples.
-    if batch_size == 32: chunk_size = 125 
-    if batch_size == 16: chunk_size = 250
+    chunk_size = max(1, 4000 // batch_size)
 
     chunk_feats = []
     c_index = 0
@@ -394,5 +419,4 @@ if __name__ == "__main__":
         print(f"Models: {models}")
 
         df_copy = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
-        
-        run_extraction(models, df_copy, modality=modality, batch_size=8, test=True)
+        run_extraction(models, df_copy, modality=modality, batch_size=32, test=True)
