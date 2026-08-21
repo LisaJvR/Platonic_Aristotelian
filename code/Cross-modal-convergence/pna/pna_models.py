@@ -97,10 +97,10 @@ MODELSETS = {
 
             "openlm-research/open_llama_3b", #done
             "openlm-research/open_llama_7b",
-            "openlm-research/open_llama_13b",# skipped
+            # "openlm-research/open_llama_13b",# skipped
             
-            "huggyllama/llama-7b",
-            "huggyllama/llama-13b",# skipped
+            # "huggyllama/llama-7b",
+            # "huggyllama/llama-13b",# skipped
             
             # Platonic 
             # "google/gemma-2b",

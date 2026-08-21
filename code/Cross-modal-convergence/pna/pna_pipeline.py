@@ -200,9 +200,6 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
     chunk_feats = []
     c_index = 0
 
-    if test == True:
-        image_paths = image_paths[:batch_size]
-
     for i in tqdm(range(0, len(image_paths), batch_size), desc=f"Extracting {model_name}", unit="batch"):
 
         batch_image_paths = image_paths[i:i + batch_size]
@@ -234,7 +231,7 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
                 del chunk_feats, chunk_tensor
                 chunk_feats = []
 
-            if test == True: break 
+                if test == True: break 
 
     if len(chunk_feats) > 0:
             chunk_tensor = torch.cat(chunk_feats, dim=0)
@@ -400,7 +397,7 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
                 del chunk_feats, chunk_tensor
                 chunk_feats = []
 
-            if test == True: break 
+                if test == True: break 
 
     if len(chunk_feats) > 0:
         chunk_tensor = torch.cat(chunk_feats, dim=0)
