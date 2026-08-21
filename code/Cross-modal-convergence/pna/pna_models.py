@@ -90,15 +90,17 @@ MODELSETS = {
     "test": {
         "text": [
             "bigscience/bloom-560m",#done
-            # "bigscience/bloom-1b1",#done
-            # "bigscience/bloom-1b7",#done
-            # "bigscience/bloom-3b", #done
-            # "bigscience/bloom-7b1",
-            # "openlm-research/open_llama_3b", #done
-            # "openlm-research/open_llama_7b",
-            # "openlm-research/open_llama_13b",# skipped
-            # "huggyllama/llama-7b",
-            # "huggyllama/llama-13b",# skipped
+            "bigscience/bloom-1b1",#done
+            "bigscience/bloom-1b7",#done
+            "bigscience/bloom-3b", #done
+            "bigscience/bloom-7b1",
+
+            "openlm-research/open_llama_3b", #done
+            "openlm-research/open_llama_7b",
+            "openlm-research/open_llama_13b",# skipped
+            
+            "huggyllama/llama-7b",
+            "huggyllama/llama-13b",# skipped
             
             # Platonic 
             # "google/gemma-2b",
