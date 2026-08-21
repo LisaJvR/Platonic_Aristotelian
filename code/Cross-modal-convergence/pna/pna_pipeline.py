@@ -20,7 +20,7 @@ import os
 import shutil
 
 def delete_hf_cached_model(model_name):
-    cache_root = os.path.expanduser("~/.cache/huggingface/hub")
+    cache_root = os.path.expanduser("/root/.cache/huggingface/hub")
 
     cache_name = "models--" + model_name.replace("/", "--")
     model_cache_path = os.path.join(cache_root, cache_name)
@@ -320,6 +320,9 @@ def load_text_model(model_name, cuda=True):
     device = check_device()
     dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
 
+    if ["bloom-1b1", "bloom-560m"] in model_name:
+        dtype = torch.bfloat16 if device.type in ["cuda", "mps"] else torch.float32
+
     print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
 
     model = AutoModel.from_pretrained(
@@ -375,6 +378,8 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
 
             if torch.isnan(feats_avg).any():
                 print(f"NaNs in pooled features at batch {i // batch_size}")
+                delete_hf_cached_model(model_name)
+                del model, tok, outputs, feats, feats_avg, batch, mask
                 return None
 
             chunk_feats.append(feats_avg.cpu())
@@ -429,7 +434,7 @@ if __name__ == "__main__":
 
     modelset = "test"
     modalities = ["text", "image", "speech"]
-    modalities = ["image"]
+    modalities = ["text"]
 
     for modality in modalities:
         print(f"Running {modelset} {modality}: --------------------------------")
