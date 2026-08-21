@@ -16,6 +16,22 @@ EMB_DIR = "../embeddings"
 OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
 OFF_LOAD_FOLDER_LOCAL = "../../bin/offload"
 
+import os
+import shutil
+
+def delete_hf_cached_model(model_name):
+    cache_root = os.path.expanduser("~/.cache/huggingface/hub")
+
+    cache_name = "models--" + model_name.replace("/", "--")
+    model_cache_path = os.path.join(cache_root, cache_name)
+
+    if os.path.exists(model_cache_path):
+        print(f"Deleting cached model: {model_cache_path}")
+        shutil.rmtree(model_cache_path)
+        print("Deleted.")
+    else:
+        print(f"Cache not found for {model_name}")
+
 def save_to_dir(avg_features,meta_data, batch_num=None):
     '''
     Save to directory with the following structure: ../embeddings/{modality}/{model_name}/features.pt
@@ -231,6 +247,7 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
             },batch_num=c_index)
 
     del chunk_feats, num_params, vision_model
+    delete_hf_cached_model(model_name)
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -391,6 +408,7 @@ def extract_text(text_data, model_name,device, batch_size,test, max_length=512, 
         },batch_num=c_index)
 
     del model, tok
+    delete_hf_cached_model(model_name)
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
