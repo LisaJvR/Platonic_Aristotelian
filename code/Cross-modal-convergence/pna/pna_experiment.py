@@ -8,70 +8,76 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
+import faiss
+import numpy as np
+import torch
 
 def compute_knn_for_all_layers(embeddings, k=5):
-    from sklearn.neighbors import NearestNeighbors
-    import torch
+    if torch.cuda.is_available():
+        use_gpu = True
+    else:
+        use_gpu = False
 
     # sklearn needs CPU NumPy arrays
     if isinstance(embeddings, torch.Tensor):
         embeddings = embeddings.detach().float().cpu().numpy()
 
+    embeddings = np.ascontiguousarray(embeddings, dtype=np.float32)
+
     print("Computing KNN for embeddings with shape:", embeddings.shape)
 
-    n_samples, n_layers, _ = embeddings.shape
+    n_samples, n_layers, dim = embeddings.shape
 
     all_indices = torch.empty(
         (n_samples, n_layers, k),
         dtype=torch.long,
     )
 
+    clean_indices = np.empty((n_samples, k), dtype=np.int64)
+
     for layer in range(n_layers):
-        layer_embeddings = embeddings[:, layer, :]
+        layer_embeddings = embeddings[:, layer, :].copy()
 
-        knn_model = NearestNeighbors(
-            n_neighbors=k + 1,
-            algorithm="auto",
-            metric="cosine",
-        )
+        faiss.normalize_L2(layer_embeddings)
+        index = faiss.IndexFlatL2(dim)
 
-        knn_model.fit(layer_embeddings)
+        # XXX
+        if use_gpu and faiss.get_num_gpus() > 0:
+            resources = faiss.StandardGpuResources()
+            index = faiss.index_cpu_to_gpu(resources,0,index,) #move to GPU
 
-        _, indices = knn_model.kneighbors(layer_embeddings)
+        index.add(layer_embeddings)
 
-        # First neighbour should be the query itself
-        indices = indices[:, 1:]
+        _, indices = index.search(layer_embeddings, k + 1)
 
-        all_indices[:, layer, :] = torch.from_numpy(indices)
+        for i in range(n_samples):
+            neighbours = indices[i][indices[i] != i]
+            clean_indices[i] = neighbours[:k]
+
+        all_indices[:, layer, :] = torch.from_numpy(clean_indices.copy())
 
     return all_indices
 
-def compute_mutual_knn_accuracy(knn_A, knn_B):
-    """
-    knn_A: [N, k]
-    knn_B: [N, k]
-    """
-
+def compute_mutual_knn_layer(knn_A, knn_B):
+    '''
+    mKNN(l,l) = 1/N sum_i^N (|KNN_A(i,l) intersect KNN_B(i,l)| / k)
+    '''
     print("knn_A shape:", knn_A.shape)
     print("knn_B shape:", knn_B.shape)
+
     assert knn_A.shape == knn_B.shape
 
     k = knn_A.shape[1]
 
-    # Compare every A neighbour against every B neighbour
-    # [N, k, 1] vs [N, 1, k]
-    # -> [N, k, k]
     matches = knn_A.unsqueeze(2) == knn_B.unsqueeze(1)
 
-    # For each neighbour in A:
-    # did it occur anywhere in B's neighborhood?
     overlap = matches.any(dim=2).sum(dim=1)
 
     per_sample_score = overlap.float() / k
 
     return per_sample_score.mean().item()
 
-def mutual_knn(feats_A, feats_B, topk):
+def mutual_knn_all_layers(feats_A, feats_B, topk):
 
     knnA_indices = compute_knn_for_all_layers(feats_A, topk)
     knnB_indices = compute_knn_for_all_layers(feats_B, topk)
@@ -79,10 +85,7 @@ def mutual_knn(feats_A, feats_B, topk):
     n_layers_A = knnA_indices.shape[1]
     n_layers_B = knnB_indices.shape[1]
 
-    scores = torch.empty(
-        (n_layers_A, n_layers_B),
-        dtype=torch.float32,
-    )
+    scores = torch.empty((n_layers_A, n_layers_B), dtype=torch.float32)
 
     for layer_A in range(n_layers_A):
         for layer_B in range(n_layers_B):
@@ -90,10 +93,7 @@ def mutual_knn(feats_A, feats_B, topk):
             knn_A = knnA_indices[:, layer_A, :]
             knn_B = knnB_indices[:, layer_B, :]
 
-            score = compute_mutual_knn_accuracy(
-                knn_A,
-                knn_B,
-            )
+            score = compute_mutual_knn_layer(knn_A,knn_B,)
 
             scores[layer_A, layer_B] = score
 
@@ -112,33 +112,21 @@ def mutual_knn_one_to_one(feats_A, feats_B, topk):
         feats_A_one_caption = feats_A[i::5]  # take every 5th caption starting from i
         feats_B_one_caption = feats_B[i::5]  # take every 5th caption starting from i
 
-        scores = mutual_knn(feats_A_one_caption, feats_B_one_caption, topk)
+        scores = mutual_knn_all_layers(feats_A_one_caption, feats_B_one_caption, topk)
 
         if i == 0:
             all_scores = scores.unsqueeze(0)
         else:
             all_scores = torch.cat((all_scores, scores.unsqueeze(0)), dim=0)
 
-    return all_scores.mean(dim=0), all_scores.std(dim=0)
-
-# def plot_results(results):
-#     for family in ["dinov2", "clip", "mae", "augreg", "data2vec-vision"]:
-#         plt.figure(figsize=(10, 6))
-#         for image_model in results:
-#             if family in image_model:
-#                 text_models = results[image_model]
-#                 text_model_names = list(text_models.keys())
-#                 accuracies = [text_models[text_model] for text_model in text_model_names]
-
-#                 plt.plot(
-#                     text_model_names,
-#                     accuracies,
-#                     marker="o",
-#                     label=image_model,
-#                 )
-#                 plt.savefig(f"../plots/mutual_knn_{family}.png")
+    return all_scores.mean(dim=0)
 
 def plot_results(results):
+    '''
+    Results contains mutual KNN and std for each image-text model pair, for each layer combination.
+    This function plots the mean mutual KNN for each image-text model pair, with error bars
+    representing the standard deviation across the 5 captions per image.
+    '''
     os.makedirs("../plots", exist_ok=True)
 
     # ------------------------------------------------------------
@@ -184,8 +172,6 @@ def plot_results(results):
         "grid.linewidth": 1.5,
         "grid.alpha": 0.8,
     })
-
-
 
     # ------------------------------------------------------------
     # Plot each vision family separately
@@ -234,7 +220,14 @@ def plot_results(results):
         for image_model in family_models:
 
             values = [
-                results[(image_model, text_model)]
+                result[0]  # mean score
+                for result in results[(image_model, text_model)]
+                for text_model in text_models
+            ]
+
+            std_values = [
+                result[1]  # standard deviation
+                for result in results[(image_model, text_model)]
                 for text_model in text_models
             ]
 
@@ -251,6 +244,14 @@ def plot_results(results):
                 markeredgewidth=0,
                 label=size,
                 zorder=3,
+            )
+            ax.fill_between(
+                x,
+                np.array(values) - np.array(std_values),
+                np.array(values) + np.array(std_values),
+                color=color,
+                alpha=0.2,
+                zorder=2,
             )
 
         # --------------------------------------------------------
@@ -372,7 +373,6 @@ def plot_results(results):
 
         plt.close(fig)
             
-
 if __name__ == "__main__":
     test = True
 
@@ -386,10 +386,8 @@ if __name__ == "__main__":
     results = {}
     # for each image model
     for image_model in image_models:
-        # for each text model (in order of platonic paper)
         for image_chunk in range(num_chunks):
             loaded_image_data = load_embeddings(image_model, "image", chunk_num=image_chunk)
-            # print_meta_info(image_model, "image", image_chunk)
             
             if loaded_image_data is None:
                 print(f"Warning: No embeddings found for {image_model} (chunk {image_chunk}). Skipping.")
@@ -410,13 +408,18 @@ if __name__ == "__main__":
                     print(f"Loaded text embeddings for {text_model} (chunk {text_chunk}) with shape: {text_feats.shape}")
                     print(f"Loaded image embeddings for {image_model} (chunk {image_chunk}) with shape: {image_feats_40k.shape}")
                     
-
-                    # scores = mutual_knn(image_feats, text_feats, topk=10)
-                    scores, stds = mutual_knn_one_to_one(image_feats, text_feats, topk=5)
+                    scores = mutual_knn_one_to_one(image_feats_40k, text_feats, topk=5)
                     print(f"Mutual KNN accuracy between {image_model} (chunk {image_chunk}) and {text_model} (chunk {text_chunk}): {scores.max().item() :.4f}")
-                    results[(image_model, text_model)] = scores.mean().item()  # store the mean score for this pair of models
-            # for all data chunks
+                    results[(image_model, text_model)] = [scores.max().item()]  
+
+    file_path = "../plots/results/mutual_knn_results.txt"
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     
+    with open(file_path, "w") as f:
+        f.write("Image_Model,Text_Model,Mean_Score,Std_Score\n")
+        for (image_model, text_model), (mean_score, std_score) in results.items():
+            f.write(f"{image_model},{text_model},{mean_score:.4f},{std_score:.4f}\n")
+
     print("Final results:", results)
     plot_results(results)
 
