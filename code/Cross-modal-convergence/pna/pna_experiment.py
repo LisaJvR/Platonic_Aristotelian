@@ -43,7 +43,7 @@ def hsic(A, B, unbiased=False):
         H = torch.eye(n, dtype=A.dtype, device=A.device) - 1 / n
         return torch.trace(A @ H @ B @ H)
             
-def compute_cka(feats_A, feats_B, type="linear", rbf_sigma=1.0, u=False):
+def compute_cka_layer(feats_A, feats_B, type="linear", rbf_sigma=1.0, u=False):
     '''
     From: Adapted from Koepke, https://github.com/minyoungg/platonic-rep/blob/main/metrics.py#L111
     '''
@@ -62,8 +62,18 @@ def compute_cka(feats_A, feats_B, type="linear", rbf_sigma=1.0, u=False):
     cka_value = H_AB / (torch.sqrt(H_AA * H_BB) + 1e-6)  
     return cka_value.item()
 
+def cka_all_layers(feats_A, feats_B, type="linear", rbf_sigma=1.0):
+    n_layers_A = feats_A.shape[1]
+    n_layers_B = feats_B.shape[1]
 
+    scores = torch.empty((n_layers_A, n_layers_B), dtype=torch.float32)
 
+    for layer_A in range(n_layers_A):
+        for layer_B in range(n_layers_B):
+            score = compute_cka_layer(feats_A[:, layer_A, :], feats_B[:, layer_B, :], type=type, rbf_sigma=rbf_sigma)
+            scores[layer_A, layer_B] = score
+
+    return scores
 # mutual KNN ------------------------------------------------------------------
 
 def compute_knn_for_all_layers(embeddings, k):
@@ -116,8 +126,8 @@ def compute_mutual_knn_layer(knn_A, knn_B):
     '''
     mKNN(l,l) = 1/N sum_i^N (|KNN_A(i,l) intersect KNN_B(i,l)| / k)
     '''
-    print("knn_A shape:", knn_A.shape)
-    print("knn_B shape:", knn_B.shape)
+    # print("knn_A shape:", knn_A.shape)
+    # print("knn_B shape:", knn_B.shape)
 
     assert knn_A.shape == knn_B.shape
 
@@ -151,22 +161,21 @@ def mutual_knn_all_layers(feats_A, feats_B, topk):
 
             scores[layer_A, layer_B] = score
 
-            print(
-                f"Layer {layer_A} vs layer {layer_B}: "
-                f"{score:.4f}"
-            )
+            # print(f"Layer {layer_A} vs layer {layer_B}: "f"{score:.4f}")
 
     return scores
 
-def mutual_knn_one_to_one(feats_A, feats_B, topk):
+def scores_one_to_one(feats_A, feats_B, topk, type="knn",subtype="linear", rbf_sigma=1.0):
     "calculate the mutualknn accuarcy, but only for one caption per image, then do it over all 5 captions and get mean and std"
-    print("feats_A shape:", feats_A.shape)
-    print("feats_B shape:", feats_B.shape)
+
     for i in range(5):
         feats_A_one_caption = feats_A[i::5]  # take every 5th caption starting from i
         feats_B_one_caption = feats_B[i::5]  # take every 5th caption starting from i
 
-        scores = mutual_knn_all_layers(feats_A_one_caption, feats_B_one_caption, topk)
+        if type == "knn":
+            scores = mutual_knn_all_layers(feats_A_one_caption, feats_B_one_caption, topk)
+        elif type == "cka":
+            scores = cka_all_layers(feats_A_one_caption, feats_B_one_caption, subtype, rbf_sigma)
 
         if i == 0:
             all_scores = scores.unsqueeze(0)
@@ -174,6 +183,60 @@ def mutual_knn_one_to_one(feats_A, feats_B, topk):
             all_scores = torch.cat((all_scores, scores.unsqueeze(0)), dim=0)
 
     return all_scores.mean(dim=0)
+
+def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10, type="knn", cka_type=None, rbf_sigma=1.0):
+    results = {}
+
+    if os.path.exists(file_path):
+            results = load_results(file_path)
+            plot_results(results)
+    else:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    for image_model in image_models:
+        for image_chunk in range(num_chunks):
+            loaded_image_data = load_embeddings(image_model, "image", chunk_num=image_chunk)
+            
+            if loaded_image_data is None:
+                print(f"Warning: No embeddings found for {image_model} (chunk {image_chunk}). Skipping.")
+                continue
+
+            image_feats = loaded_image_data["avg"]
+            image_feats_40k = image_feats.repeat_interleave(5, dim=0) # every image x5 captions
+
+            for text_model in text_models:
+                 for text_chunk in range(num_chunks):
+
+                    if image_model and text_model in results:
+                        print(f"Skipping {image_model} and {text_model} since results already exist.")
+                        continue
+                    loaded_text_data = load_embeddings(text_model, "text", chunk_num=text_chunk)
+
+                    if loaded_text_data is None:
+                        print(f"Warning: No embeddings found for {text_model} (chunk {text_chunk}). Skipping.")
+                        continue
+                    text_feats = loaded_text_data["avg"]
+
+                    print(f"Loaded text embeddings for {text_model} (chunk {text_chunk}) with shape: {text_feats.shape}")
+                    print(f"Loaded image embeddings for {image_model} (chunk {image_chunk}) with shape: {image_feats_40k.shape}")
+
+                    if type == "knn":
+                        scores = scores_one_to_one(image_feats_40k, text_feats, topk=topk)
+
+                        print(f"Mutual KNN accuracy between {image_model} (chunk {image_chunk}) and {text_model} (chunk {text_chunk}): {scores.max().item() :.4f}")
+                    elif type == "cka":
+                        scores = scores_one_to_one(image_feats_40k, text_feats, topk=topk, type="cka", subtype=cka_type, rbf_sigma=rbf_sigma)
+
+                        print(f"CKA score between {image_model} (chunk {image_chunk}) and {text_model} (chunk {text_chunk}): {scores :.4f}")
+
+                    results[(image_model, text_model)] = scores.max().item()
+
+    with open(file_path, "w") as f:
+        f.write("Image_Model,Text_Model,Mean_Score,Std_Score\n")
+        for (image_model, text_model), (max_score) in results.items():
+            f.write(f"{image_model},{text_model},{max_score:.4f}\n")
+
+    print(f"Final results {type}:", results)
 
 def plot_results(results):
     '''
@@ -199,11 +262,6 @@ def plot_results(results):
         "tiny": viridis(0.98),
         "huge": viridis(0.15),
     }
-    size_colors = {
-        "base":  viridis(0.95),  # yellow
-        "large": viridis(0.55),  # teal/green
-        "huge":  viridis(0.05),  # purple
-        }
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
@@ -432,53 +490,11 @@ if __name__ == "__main__":
     if test == True:
         num_chunks = 1
 
-    file_path = "../plots/results/mutual_knn_results.txt"
-
-    if os.path.exists(file_path):
-        results = load_results(file_path)
-        plot_results(results)
-
-    else:
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-    results = {}
-    # for each image model
-    for image_model in image_models:
-        for image_chunk in range(num_chunks):
-            loaded_image_data = load_embeddings(image_model, "image", chunk_num=image_chunk)
-            
-            if loaded_image_data is None:
-                print(f"Warning: No embeddings found for {image_model} (chunk {image_chunk}). Skipping.")
-                continue
-
-            image_feats = loaded_image_data["avg"]
-            image_feats_40k = image_feats.repeat_interleave(5, dim=0) # every image x5 captions
-
-            for text_model in text_models:
-                 for text_chunk in range(num_chunks):
-                    if image_model and text_model in results:
-                        print(f"Skipping {image_model} and {text_model} since results already exist.")
-                        continue
-                    loaded_text_data = load_embeddings(text_model, "text", chunk_num=text_chunk)
-                    # print_meta_info(text_model, "text", text_chunk)
-                    if loaded_text_data is None:
-                        print(f"Warning: No embeddings found for {text_model} (chunk {text_chunk}). Skipping.")
-                        continue
-                    text_feats = loaded_text_data["avg"]
-
-                    print(f"Loaded text embeddings for {text_model} (chunk {text_chunk}) with shape: {text_feats.shape}")
-                    print(f"Loaded image embeddings for {image_model} (chunk {image_chunk}) with shape: {image_feats_40k.shape}")
-                    
-                    scores = mutual_knn_one_to_one(image_feats_40k, text_feats, topk=10)
-                    print(f"Mutual KNN accuracy between {image_model} (chunk {image_chunk}) and {text_model} (chunk {text_chunk}): {scores.max().item() :.4f}")
-                    results[(image_model, text_model)] = [scores.max().item()]  
+    # mKNN
+    run_experiment(image_models, text_models, num_chunks=num_chunks, topk=10,type="knn", file_path="../plots/results/mutual_knn_results.txt")
+    # CKA linear & RBF
+    run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", file_path="../plots/results/cka_linear_results.txt")
+    run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, file_path="../plots/results/cka_rbf_results.txt")
 
     
-    with open(file_path, "w") as f:
-        f.write("Image_Model,Text_Model,Mean_Score,Std_Score\n")
-        for (image_model, text_model), (max_score) in results.items():
-            f.write(f"{image_model},{text_model},{max_score:.4f}\n")
-
-    print("Final results:", results)
-    plot_results(results)
 

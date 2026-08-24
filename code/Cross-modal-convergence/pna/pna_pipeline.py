@@ -317,7 +317,7 @@ def load_text_model(model_name, cuda=True):
     device = check_device()
     dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
 
-    if "bloom-1b1" in model_name or "bloom-560m" in model_name:
+    if "bloom-1b1" in model_name or "bloom-560m" in model_name or "bloom-1b7" in model_name:
         dtype = torch.float32
 
     print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
@@ -431,7 +431,7 @@ if __name__ == "__main__":
 
     modelset = "test"
     modalities = ["text", "image", "speech"]
-    modalities = ["text"]
+    modalities = ["text","image"]
 
     for modality in modalities:
         print(f"Running {modelset} {modality}: --------------------------------")
