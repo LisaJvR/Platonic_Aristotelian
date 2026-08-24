@@ -456,6 +456,9 @@ if __name__ == "__main__":
 
             for text_model in text_models:
                  for text_chunk in range(num_chunks):
+                    if image_model and text_model in results:
+                        print(f"Skipping {image_model} and {text_model} since results already exist.")
+                        continue
                     loaded_text_data = load_embeddings(text_model, "text", chunk_num=text_chunk)
                     # print_meta_info(text_model, "text", text_chunk)
                     if loaded_text_data is None:
