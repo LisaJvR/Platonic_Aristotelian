@@ -12,7 +12,61 @@ import faiss
 import numpy as np
 import torch
 
-def compute_knn_for_all_layers(embeddings, k=5):
+from pna_pipeline import EMB_DIR
+
+# CKA ------------------------------------------------------------------------
+def hsic(A, B, unbiased=False):
+    '''
+        From: Adapted from Koepke, https://github.com/minyoungg/platonic-rep/blob/main/metrics.py#L111
+        Eqn 5 from: https://jmlr.csail.mit.edu/papers/volume13/song12a/song12a.pdf
+    '''
+
+    if unbiased:
+        m = A.shape[0]
+
+        # Zero out the diagonal elements of K and L
+        A_tilde = A.clone().fill_diagonal_(0)
+        B_tilde = B.clone().fill_diagonal_(0)
+
+        # Compute HSIC using the formula in Equation 5
+        HSIC_value = (
+            (torch.sum(A_tilde * B_tilde.T))
+            + (torch.sum(A_tilde) * torch.sum(B_tilde) / ((m - 1) * (m - 2)))
+            - (2 * torch.sum(torch.mm(A_tilde, B_tilde)) / (m - 2))
+        )
+
+        HSIC_value /= m * (m - 3)
+        return HSIC_value
+    
+    else:
+        n = A.shape[0]
+        H = torch.eye(n, dtype=A.dtype, device=A.device) - 1 / n
+        return torch.trace(A @ H @ B @ H)
+            
+def compute_cka(feats_A, feats_B, type="linear", rbf_sigma=1.0, u=False):
+    '''
+    From: Adapted from Koepke, https://github.com/minyoungg/platonic-rep/blob/main/metrics.py#L111
+    '''
+    if type == "linear":
+        kernel_A = torch.mm(feats_A, feats_A.T)
+        kernel_B = torch.mm(feats_B, feats_B.T)
+
+    elif type == "rbf":
+        kernel_A = torch.exp(-torch.cdist(feats_A, feats_A) ** 2 / (2 * rbf_sigma ** 2))
+        kernel_B = torch.exp(-torch.cdist(feats_B, feats_B) ** 2 / (2 * rbf_sigma ** 2))
+
+    H_AA = hsic(kernel_A, kernel_A, unbiased=u)
+    H_BB = hsic(kernel_B, kernel_B, unbiased=u)
+    H_AB = hsic(kernel_A, kernel_B, unbiased=u)
+
+    cka_value = H_AB / (torch.sqrt(H_AA * H_BB) + 1e-6)  
+    return cka_value.item()
+
+
+
+# mutual KNN ------------------------------------------------------------------
+
+def compute_knn_for_all_layers(embeddings, k):
     if torch.cuda.is_available():
         use_gpu = True
     else:
@@ -220,14 +274,7 @@ def plot_results(results):
         for image_model in family_models:
 
             values = [
-                result[0]  # mean score
-                for result in results[(image_model, text_model)]
-                for text_model in text_models
-            ]
-
-            std_values = [
-                result[1]  # standard deviation
-                for result in results[(image_model, text_model)]
+                results[(image_model, text_model)]
                 for text_model in text_models
             ]
 
@@ -244,14 +291,6 @@ def plot_results(results):
                 markeredgewidth=0,
                 label=size,
                 zorder=3,
-            )
-            ax.fill_between(
-                x,
-                np.array(values) - np.array(std_values),
-                np.array(values) + np.array(std_values),
-                color=color,
-                alpha=0.2,
-                zorder=2,
             )
 
         # --------------------------------------------------------
@@ -372,7 +411,17 @@ def plot_results(results):
         )
 
         plt.close(fig)
-            
+
+def load_results(file_path):
+    results = {}
+    with open(file_path, "r") as f:
+        next(f)  # skip header
+        for line in f:
+            image_model, text_model, mean_score = line.strip().split(",")
+            results[(image_model, text_model)] = [float(mean_score)]
+    return results
+
+
 if __name__ == "__main__":
     test = True
 
@@ -381,7 +430,16 @@ if __name__ == "__main__":
 
     num_chunks = 10 
     if test == True:
-        num_chunks = 2
+        num_chunks = 1
+
+    file_path = "../plots/results/mutual_knn_results.txt"
+
+    if os.path.exists(file_path):
+        results = load_results(file_path)
+        plot_results(results)
+
+    else:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
     results = {}
     # for each image model
@@ -408,17 +466,15 @@ if __name__ == "__main__":
                     print(f"Loaded text embeddings for {text_model} (chunk {text_chunk}) with shape: {text_feats.shape}")
                     print(f"Loaded image embeddings for {image_model} (chunk {image_chunk}) with shape: {image_feats_40k.shape}")
                     
-                    scores = mutual_knn_one_to_one(image_feats_40k, text_feats, topk=5)
+                    scores = mutual_knn_one_to_one(image_feats_40k, text_feats, topk=10)
                     print(f"Mutual KNN accuracy between {image_model} (chunk {image_chunk}) and {text_model} (chunk {text_chunk}): {scores.max().item() :.4f}")
                     results[(image_model, text_model)] = [scores.max().item()]  
 
-    file_path = "../plots/results/mutual_knn_results.txt"
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     
     with open(file_path, "w") as f:
         f.write("Image_Model,Text_Model,Mean_Score,Std_Score\n")
-        for (image_model, text_model), (mean_score, std_score) in results.items():
-            f.write(f"{image_model},{text_model},{mean_score:.4f},{std_score:.4f}\n")
+        for (image_model, text_model), (max_score) in results.items():
+            f.write(f"{image_model},{text_model},{max_score:.4f}\n")
 
     print("Final results:", results)
     plot_results(results)
