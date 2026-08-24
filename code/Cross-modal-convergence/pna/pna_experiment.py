@@ -238,6 +238,25 @@ def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10,
 
     print(f"Final results {type}:", results)
 
+def belongs_to_family(image_model, family):
+    if family == "imagenet21k":
+        return (
+            "augreg" in image_model
+        )
+    if family == "clip":
+        return (
+            "_clip_" in image_model
+            and "_ft_in12k" not in image_model
+        )
+
+    if family == "clip (IN12K-ft)":
+        return (
+            "_clip_" in image_model
+            and "_ft_in12k" in image_model
+        )
+
+    return family in image_model
+
 def plot_results(results):
     '''
     Results contains mutual KNN and std for each image-text model pair, for each layer combination.
@@ -291,8 +310,9 @@ def plot_results(results):
     families = [
         "dinov2",
         "clip",
+        "clip (IN12K-ft)",
         "mae",
-        "augreg",
+        "imagenet21k",
         "data2vec-vision",
     ]
 
@@ -301,7 +321,7 @@ def plot_results(results):
         family_models = list({
             image_model
             for (image_model, text_model), score in results.items()
-            if family in image_model
+            if belongs_to_family(image_model, family)
         })
 
         if not family_models:
@@ -493,8 +513,8 @@ if __name__ == "__main__":
     # mKNN
     run_experiment(image_models, text_models, num_chunks=num_chunks, topk=10,type="knn", file_path="../plots/results/mutual_knn_results.txt")
     # CKA linear & RBF
-    run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", file_path="../plots/results/cka_linear_results.txt")
-    run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, file_path="../plots/results/cka_rbf_results.txt")
+    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", file_path="../plots/results/cka_linear_results.txt")
+    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, file_path="../plots/results/cka_rbf_results.txt")
 
     
 
