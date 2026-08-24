@@ -114,15 +114,30 @@ MODELSETS = {
             # "facebook/data2vec-text-base", # have data2vec audio later
         ],
         "image": [
+            "vit_tiny_patch16_224.augreg_in21k",#imagenet
+            "vit_small_patch16_224.augreg_in21k",
+            "vit_base_patch16_224.augreg_in21k",
+            "vit_large_patch16_224.augreg_in21k",
+            
             "vit_base_patch16_224.mae",
             "vit_large_patch16_224.mae",
             "vit_huge_patch14_224.mae",
-            "vit_base_patch16_224.augreg_in21k",
-            "vit_large_patch16_224.augreg_in21k",
+            
+            "vit_small_patch14_dinov2.lvd142m",
             "vit_base_patch14_dinov2.lvd142m",
+            "vit_large_patch14_dinov2.lvd142m",
+            "vit_giant_patch14_dinov2.lvd142m",
+            
             "vit_base_patch16_clip_224.laion2b",
+            "vit_large_patch14_clip_224.laion2b",
+            "vit_huge_patch14_clip_224.laion2b",
+
             "vit_base_patch16_clip_224.laion2b_ft_in12k",
-            # "facebook/data2vec-vision-base",
+            "vit_large_patch14_clip_224.laion2b_ft_in12k",
+            "vit_huge_patch14_clip_224.laion2b_ft_in12k",
+            
+            "facebook/data2vec-vision-base", # also have text and audio
+            "facebook/data2vec-vision-large",
         ],
         "speech": [
             "facebook/wav2vec2-base",#self-supervised
