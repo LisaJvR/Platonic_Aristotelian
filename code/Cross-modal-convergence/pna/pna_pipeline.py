@@ -12,17 +12,18 @@ import timm
 from timm.data import resolve_data_config, create_transform
 from torchvision.models.feature_extraction import create_feature_extractor
 
-EMB_DIR = "../embeddings"
-OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
-OFF_LOAD_FOLDER_LOCAL = "../../bin/offload"
+
+from pna_data import EMB_DIR, OFF_LOAD_FOLDER_COLAB, OFF_LOAD_FOLDER_LOCAL
 
 import os
 import shutil
 
 def delete_hf_cached_model(model_name):
-    cache_root = os.path.expanduser("/root/.cache/huggingface/hub")
+    cache_root = os.path.expanduser("~/.cache/huggingface/hub/")
 
     cache_name = "models--" + model_name.replace("/", "--")
+    if "vit" in model_name:
+        cache_name = "models--timm--" + model_name.replace("/", "--")
     model_cache_path = os.path.join(cache_root, cache_name)
 
     if os.path.exists(model_cache_path):
@@ -30,7 +31,7 @@ def delete_hf_cached_model(model_name):
         shutil.rmtree(model_cache_path)
         print("Deleted.")
     else:
-        print(f"Cache not found for {model_name}")
+        print(f"Cache not found for {model_cache_path}")
 
 def save_to_dir(avg_features,meta_data, batch_num=None):
     '''
@@ -129,7 +130,7 @@ def load_img_models(model_name):
     device = check_device()
     # dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
     dtype = torch.float32
-
+        
     model = timm.create_model( model_name, pretrained=True)
 
     transform = create_transform(
@@ -439,4 +440,4 @@ if __name__ == "__main__":
         print(f"Models: {models}")
 
         df_copy = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
-        run_extraction(models, df_copy, modality=modality, batch_size=32, test=True)
+        run_extraction(models, df_copy, modality=modality, batch_size=16, test=True)

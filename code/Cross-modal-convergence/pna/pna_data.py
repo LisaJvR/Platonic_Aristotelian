@@ -3,13 +3,17 @@ import pandas as pd
 import os
 import PIL
 from PIL import Image
-
+import torch
 
 path = kagglehub.dataset_download("adityajn105/flickr8k") # Flickr 8k Dataset
 path_audio = kagglehub.dataset_download("warcoder/flickr-8k-audio-caption-corpus")
 token_text_path = kagglehub.dataset_download("sealeopard/flickr8k-token-txt")
 
 df_path = "../../data/flickr8k_audio_text_image.csv"
+
+EMB_DIR = "../embeddings"
+OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
+OFF_LOAD_FOLDER_LOCAL = "../../bin/offload"
 
 print("Path to image files:", path)
 print("Path to dataset files:", path_audio)
@@ -88,16 +92,54 @@ def get_image_files(image_ids):
     return images
 
 def load_embeddings(model_name, modality, chunk_num=0):
-    import torch
-
+    
     safe_model_name = model_name.replace("/", "__")
-    emb_dir = f"../embeddings/{modality}/{safe_model_name}/features_{chunk_num}.pt"
+    emb_dir = f"{EMB_DIR}/{modality}/{safe_model_name}/features_{chunk_num}.pt"
+    if not os.path.exists(emb_dir):
+        print(f"Embeddings for {model_name} ({modality}) chunk {chunk_num} not found at {emb_dir}.")
+        return None
     data = torch.load(emb_dir)
 
     return data
 
-def print_meta_info(model_name, modality):
-    data = load_embeddings(model_name, modality)
+def load_all_chunks(model_name, modality, num_chunks, caption_number=0):
+    '''
+    Load all chunks of embeddings for a given model and modality, and return a concatenated tensor of the embeddings.
+    If modality is "text" or "speech", it will select every 5th embedding starting from the specified caption_number.
+    '''
+    chunks = []
+
+    for chunk_num in range(num_chunks):
+        data = load_embeddings(
+            model_name,
+            modality,
+            chunk_num=chunk_num
+        )
+
+        if data is None:
+            raise ValueError(
+                f"Missing {modality} chunk {chunk_num} "
+                f"for {model_name}"
+            )
+
+        if modality == "text" or modality == "speech":
+            feats = data["avg"]
+            if feats.shape[0] % 5 != 0:
+                raise ValueError(
+                    f"Unexpected shape for {modality} chunk {chunk_num} "
+                    f"for {model_name}: {feats.shape}"
+                )
+            caption_feats = feats[caption_number::5]
+            chunks.append(caption_feats)
+            del caption_feats, data
+        else:
+            chunks.append(data["avg"])
+            del data
+
+    return torch.cat(chunks, dim=0)
+
+def print_meta_info(model_name, modality, chunk_number):
+    data = load_embeddings(model_name, modality, chunk_num=chunk_number)
     print("Model:", data["metadata"]["model_name"])
     print("Modality:", data["metadata"]["modality"])
     print("Avg shape:", data["avg"].shape)
@@ -105,7 +147,8 @@ def print_meta_info(model_name, modality):
 
 
 def get_captions_from_index(modality):
-    index_df = pd.read_csv(f"../embeddings/{modality}/dataset_index.csv")
+    
+    index_df = pd.read_csv(f"{EMB_DIR}/{modality}/dataset_index.csv")
     dataset = pd.read_csv("../../data/flickr8k_audio_text_image.csv")
 
     index_df = index_df.reset_index(names="embedding_index")
@@ -118,3 +161,5 @@ def get_captions_from_index(modality):
     )
 
     return mapped_df # returns: embedding_index, image, caption_number, caption
+
+    

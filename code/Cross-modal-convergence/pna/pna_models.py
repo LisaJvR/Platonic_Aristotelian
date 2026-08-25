@@ -3,7 +3,7 @@ MODELSETS = {
         # 0-1B : 4 ; 2-3B: 4 ; 7-8B: 8 ; 10+B: 1 30+B: 3
         "text": [
             # Platonic model family (Fig 3 - compare image to 3 family of text models)
-            "bigscience/bloom-560m",# P
+            # "bigscience/bloom-560m",# P
             "bigscience/bloom-1b1",# P
             "bigscience/bloom-1b7",# P
             "bigscience/bloom-3b",# P
@@ -99,7 +99,7 @@ MODELSETS = {
             "openlm-research/open_llama_7b",
             # "openlm-research/open_llama_13b",# skipped
             
-            # "huggyllama/llama-7b",
+            "huggyllama/llama-7b",
             # "huggyllama/llama-13b",# skipped
             
             # Platonic 
@@ -126,7 +126,7 @@ MODELSETS = {
             "vit_small_patch14_dinov2.lvd142m",
             "vit_base_patch14_dinov2.lvd142m",
             "vit_large_patch14_dinov2.lvd142m",
-            "vit_giant_patch14_dinov2.lvd142m",
+            # "vit_giant_patch14_dinov2.lvd142m",
             
             "vit_base_patch16_clip_224.laion2b",
             "vit_large_patch14_clip_224.laion2b",
@@ -134,10 +134,8 @@ MODELSETS = {
 
             "vit_base_patch16_clip_224.laion2b_ft_in12k",
             "vit_large_patch14_clip_224.laion2b_ft_in12k",
-            "vit_huge_patch14_clip_224.laion2b_ft_in12k",
-            
-            "facebook/data2vec-vision-base", # also have text and audio
-            "facebook/data2vec-vision-large",
+            # "vit_huge_patch14_clip_224.laion2b_ft_in12k",
+
         ],
         "speech": [
             "facebook/wav2vec2-base",#self-supervised
