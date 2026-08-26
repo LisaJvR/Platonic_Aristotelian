@@ -321,7 +321,7 @@ def load_text_model(model_name, cuda=True):
     # if "bloom-1b1" in model_name or "bloom-560m" in model_name or "bloom-1b7" in model_name:
     #     dtype = torch.float32
     if "bloom" in model_name:
-        dtype = torch.float32
+        dtype = torch.float32git
 
     print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
 
