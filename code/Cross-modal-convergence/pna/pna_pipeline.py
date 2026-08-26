@@ -131,7 +131,7 @@ def load_img_models(model_name):
     # dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
     dtype = torch.float32
         
-    model = timm.create_model( model_name, pretrained=True)
+    model = timm.create_model(model_name, pretrained=True)
 
     transform = create_transform(
         **resolve_data_config(model.pretrained_cfg, model=model),
@@ -318,7 +318,9 @@ def load_text_model(model_name, cuda=True):
     device = check_device()
     dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
 
-    if "bloom-1b1" in model_name or "bloom-560m" in model_name or "bloom-1b7" in model_name:
+    # if "bloom-1b1" in model_name or "bloom-560m" in model_name or "bloom-1b7" in model_name:
+    #     dtype = torch.float32
+    if "bloom" in model_name:
         dtype = torch.float32
 
     print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
@@ -440,4 +442,4 @@ if __name__ == "__main__":
         print(f"Models: {models}")
 
         df_copy = df[["image", "caption_number", "caption"]].copy()#XXX not best use of storage
-        run_extraction(models, df_copy, modality=modality, batch_size=16, test=True)
+        run_extraction(models, df_copy, modality=modality, batch_size=32, test=True)

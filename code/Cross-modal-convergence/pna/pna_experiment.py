@@ -8,6 +8,7 @@ from pna_data import load_embeddings, print_meta_info, get_captions_from_index, 
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter, MultipleLocator
 from matplotlib import cm
 from tqdm import tqdm
 
@@ -61,7 +62,7 @@ def compute_cka_layer(feats_A, feats_B, type="linear", rbf_sigma=1.0, u=False):
     cka_value = H_AB / (torch.sqrt(H_AA * H_BB) + 1e-6)  
     return cka_value.item()
 
-def cka_all_layers(feats_A, feats_B, type="linear", rbf_sigma=1.0):
+def cka_all_layers(feats_A, feats_B, type="linear", rbf_sigma=1.0, biased=False):
     n_layers_A = feats_A.shape[1]
     n_layers_B = feats_B.shape[1]
 
@@ -69,7 +70,7 @@ def cka_all_layers(feats_A, feats_B, type="linear", rbf_sigma=1.0):
 
     for layer_A in range(n_layers_A):
         for layer_B in range(n_layers_B):
-            score = compute_cka_layer(feats_A[:, layer_A, :], feats_B[:, layer_B, :], type=type, rbf_sigma=rbf_sigma)
+            score = compute_cka_layer(feats_A[:, layer_A, :], feats_B[:, layer_B, :], type=type, rbf_sigma=rbf_sigma, u=not biased)
             scores[layer_A, layer_B] = score
 
     return scores
@@ -176,7 +177,7 @@ def mutual_knn_all_layers(knnA_indices, knnB_indices,num_image_layers, num_text_
 
     return scores
 
-def scores_one_to_one(feats_image, text_model, topk, type="knn",subtype="linear", rbf_sigma=1.0, num_chunks=10):
+def scores_one_to_one(feats_image, text_model, topk, type="knn",subtype="linear", rbf_sigma=1.0, num_chunks=10, biased=False):
     "calculate the mutualknn accuarcy, but only for one caption per image, then do it over all 5 captions and get mean and std"
     if type == "knn":
         image_knn = compute_knn_for_all_layers(feats_image, topk)
@@ -188,7 +189,7 @@ def scores_one_to_one(feats_image, text_model, topk, type="knn",subtype="linear"
             text_knn = compute_knn_for_all_layers(feats_text, topk)
             scores = mutual_knn_all_layers(image_knn, text_knn,num_image_layers=feats_image.shape[1], num_text_layers=feats_text.shape[1], topk=topk)
         elif type == "cka":
-            scores = cka_all_layers(feats_image, feats_text, subtype, rbf_sigma)
+            scores = cka_all_layers(feats_image, feats_text, subtype, rbf_sigma, biased=biased)
 
         if i == 0:
             all_scores = scores.unsqueeze(0)
@@ -197,7 +198,7 @@ def scores_one_to_one(feats_image, text_model, topk, type="knn",subtype="linear"
 
     return all_scores.mean(dim=0)
 
-def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10, type="knn", cka_type=None, rbf_sigma=1.0):
+def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10, type="knn", cka_type=None, rbf_sigma=1.0, biased=False):
     
     results = {}
 
@@ -212,33 +213,32 @@ def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10,
 
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         results = load_results(file_path)
-        plot_results(results)
+        plot_results(results, f"{type}{'_' + cka_type if cka_type else ''}{'_sigma' + str(rbf_sigma) if type == 'cka' and cka_type == 'rbf' else ''}{'_biased' if biased else ''}")
         print(f"Results already exist in {file_path}. Loaded and plotted existing results.")
+        # return None
     else:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "w") as f:
             f.write("Image_Model,Text_Model,Max_Score\n")
 
 
-    for image_model in tqdm(image_models, desc="Processing image models"):
-
+    for image_model in tqdm(image_models, desc=f"{type}: Processing image model:", leave=False):
         image_feats = load_all_chunks(image_model, "image", num_chunks=num_chunks)
 
         if image_feats is None:
             print(f"Warning: No embeddings found for {image_model} Skipping.")
             continue
 
-        for text_model in text_models:
-            if image_model in results and text_model in results:
+        for text_model in tqdm(text_models, desc=f"{type}: Processing text model:", leave=False):
+            if (image_model, text_model) in results:
+                print(f"Skipping {image_model} and {text_model} as results already exist.")
                 continue
 
-            # type should indicate it what to do
-            scores = scores_one_to_one(image_feats, text_model, topk=topk, type=type, subtype=cka_type, rbf_sigma=rbf_sigma, num_chunks=num_chunks)
-
+            scores = scores_one_to_one(image_feats, text_model, topk=topk, type=type, subtype=cka_type, rbf_sigma=rbf_sigma, biased=biased, num_chunks=num_chunks)
             results[(image_model, text_model)] = scores.max().item()
 
             with open(file_path, "a") as f:
-                f.write(f"{image_model},{text_model},{scores.max().item():.2f}\n")
+                f.write(f"{image_model},{text_model},{scores.max().item():.4f}\n")
 
     if len(results) == 0:
         print(
@@ -247,7 +247,7 @@ def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10,
         )
 
     print(f"Final results {type}:", results)
-    plot_results(results)
+    plot_results(results, f"{type}{'_' + cka_type if cka_type else ''}{'_sigma' + str(rbf_sigma) if type == 'cka' and cka_type == 'rbf' else ''}{'_biased' if biased else ''}")
     return None
 
 def belongs_to_family(image_model, family):
@@ -269,7 +269,7 @@ def belongs_to_family(image_model, family):
 
     return family in image_model
 
-def plot_results(results):
+def plot_results(results, type):
     '''
     Results contains mutual KNN and std for each image-text model pair, for each layer combination.
     This function plots the mean mutual KNN for each image-text model pair, with error bars
@@ -366,7 +366,10 @@ def plot_results(results):
             values = [
                 results[(image_model, text_model)]
                 for text_model in text_models
+                # if (image_model, text_model) in results
             ]
+            # 2 dec
+            # values = [np.round(v, 2) for v in values]
 
             size = get_size(image_model)
             color = size_colors[size]
@@ -404,6 +407,10 @@ def plot_results(results):
             fontsize=22,
             color=text_color,
         )
+
+        # Show y-axis ticks with exactly 2 decimals.
+        # ax.yaxis.set_major_locator(MultipleLocator(0.005))
+        ax.yaxis.set_major_formatter(FormatStrFormatter("%.3f"))
 
         # reference has ticks pointing outward
         ax.tick_params(
@@ -495,8 +502,8 @@ def plot_results(results):
 
         os.makedirs("../plots/results/", exist_ok=True)
         plt.savefig(
-            f"../plots/results/mutual_knn_{family}.png",
-            dpi=100,
+            f"../plots/results/{type}_{family}.png",
+            dpi=300,
             bbox_inches="tight",
         )
 
@@ -523,10 +530,10 @@ if __name__ == "__main__":
         num_chunks = 1
 
     # mKNN
-    run_experiment(image_models, text_models, num_chunks=num_chunks, topk=10,type="knn", file_path="../plots/results/knn/mutual_knn_results.txt")
+    # run_experiment(image_models, text_models, num_chunks=num_chunks, topk=10,type="knn", file_path="../plots/results/knn/mutual_knn_results.txt")
     # CKA linear & RBF
-    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", file_path="../plots/results/cka/cka_linear_results.txt")
-    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, file_path="../plots/results/cka/cka_rbf_results.txt")
+    run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/results/cka/cka_linear_results_unbiased.txt")
+    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, biased=False, file_path="../plots/results/cka/cka_rbf_results_unbiased.txt")
 
     
 

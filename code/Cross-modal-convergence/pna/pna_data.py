@@ -124,6 +124,9 @@ def load_all_chunks(model_name, modality, num_chunks, caption_number=0):
 
         if modality == "text" or modality == "speech":
             feats = data["avg"]
+
+            feats = feats.to(torch.float32)  # Ensure the tensor is of type float32
+
             if feats.shape[0] % 5 != 0:
                 raise ValueError(
                     f"Unexpected shape for {modality} chunk {chunk_num} "
