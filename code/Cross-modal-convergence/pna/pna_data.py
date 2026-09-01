@@ -22,6 +22,18 @@ print("Path to token_file files:", token_text_path)
 def get_flickr8k_dataset_paths():
     return path, path_audio
 
+def remove_outliers(df, lower_quantile=0.01, upper_quantile=0.99):
+    df = df.copy()
+
+    df["caption_length"] = df["caption"].apply(lambda x: len(x.split()))
+
+    lower_bound = df["caption_length"].quantile(lower_quantile)
+    upper_bound = df["caption_length"].quantile(upper_quantile)
+    
+    filtered_df = df[(df["caption_length"] >= lower_bound) & (df["caption_length"] <= upper_bound)]
+    
+    return filtered_df
+
 def build_flikr8k_text_audio_image():
     # Get the paths to the Flickr8k dataset files
     path, path_audio = get_flickr8k_dataset_paths()
@@ -70,7 +82,22 @@ def build_flikr8k_text_audio_image():
     os.makedirs(os.path.dirname(df_path), exist_ok=True)
     all_df.to_csv(df_path, index=False)
 
+    all_df = remove_outliers(all_df, lower_quantile=0.01, upper_quantile=0.99)
+
     return all_df
+
+def get_audio_files(audio_ids):
+    _, path = get_flickr8k_dataset_paths()
+    audio_dir = os.path.join(path, "flickr_audio/flickr_audio/wavs")
+
+    audio_files = []
+    for audio_id in audio_ids:
+        audio_path = os.path.join(audio_dir, audio_id)
+        if os.path.exists(audio_path):
+            audio_files.append(audio_path)
+        else:
+            print(f"Warning: {audio_id} not found in {audio_dir}.")
+    return audio_files
 
 def get_image_files(image_ids):
     path, _ = get_flickr8k_dataset_paths()

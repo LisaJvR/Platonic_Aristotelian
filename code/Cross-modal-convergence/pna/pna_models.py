@@ -69,15 +69,16 @@ MODELSETS = {
             "facebook/hubert-large-ll60k",
             "facebook/hubert-xlarge-ll60k",
 
-            "facebook/data2vec-audio-base",
-            "facebook/data2vec-audio-large",
+            # "facebook/data2vec-audio-base",
+            # "facebook/data2vec-audio-large",
 
             "microsoft/wavlm-base",
             "microsoft/wavlm-base-plus",
             "microsoft/wavlm-large",
 
-            "microsoft/unispeech-sat-base",
-            "microsoft/unispeech-sat-large",
+            "microsoft/unispeech-sat-base", # double check
+            "microsoft/unispeech-sat-large", #double check
+            
             # "facebook/w2v-bert-2.0", # conformer
             # "openai/whisper-tiny", # only use encodings
             # "openai/whisper-base",
@@ -89,9 +90,9 @@ MODELSETS = {
     
     "test": {
         "text": [
-            "bigscience/bloom-560m",#done
-            "bigscience/bloom-1b1",#done
-            "bigscience/bloom-1b7",#done
+            "bigscience/bloom-560m",#done 32
+            "bigscience/bloom-1b1",#done 32
+            "bigscience/bloom-1b7",#done 32
             "bigscience/bloom-3b", #done
             "bigscience/bloom-7b1",
 
@@ -99,7 +100,7 @@ MODELSETS = {
             "openlm-research/open_llama_7b",
             # "openlm-research/open_llama_13b",# skipped
             
-            "huggyllama/llama-7b",
+            # "huggyllama/llama-7b",
             # "huggyllama/llama-13b",# skipped
             
             # Platonic 
@@ -129,11 +130,11 @@ MODELSETS = {
             # "vit_giant_patch14_dinov2.lvd142m",
             
             "vit_base_patch16_clip_224.laion2b",
-            "vit_large_patch14_clip_224.laion2b",
-            "vit_huge_patch14_clip_224.laion2b",
+            # "vit_large_patch14_clip_224.laion2b",
+            # "vit_huge_patch14_clip_224.laion2b",
 
             "vit_base_patch16_clip_224.laion2b_ft_in12k",
-            "vit_large_patch14_clip_224.laion2b_ft_in12k",
+            # "vit_large_patch14_clip_224.laion2b_ft_in12k",
             # "vit_huge_patch14_clip_224.laion2b_ft_in12k",
 
         ],
