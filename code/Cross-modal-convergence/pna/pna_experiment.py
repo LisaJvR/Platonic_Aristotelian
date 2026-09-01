@@ -2,7 +2,7 @@ import torch
 from pna_models import get_models
 from pna_data import load_all_chunks
 from pna_metrics import knn_layers, mutual_knn_layers, cka_layers
-from pna_plotting_code import plot_image_text_results, plot_results, get_reg_coeffs
+from pna_plotting_code import  plot_results, get_reg_coeffs
 import os
 from tqdm import tqdm
 
