@@ -141,7 +141,7 @@ MODELSETS = {
             "facebook/wav2vec2-base",#self-supervised
             "facebook/wav2vec2-large",
             # "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
-            "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
+            # "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
 
             "facebook/wav2vec2-xls-r-300m", # cross lingual (larger pretrained dataset), not fine tuned, just checkpoints
             "facebook/wav2vec2-xls-r-1b",
@@ -150,7 +150,7 @@ MODELSETS = {
             "facebook/hubert-large-ll60k",
             # "facebook/hubert-xlarge-ll60k",
 
-            # "facebook/data2vec-audio-base",
+            "facebook/data2vec-audio-base",
             # "facebook/data2vec-audio-large",
 
             "microsoft/wavlm-base",
