@@ -141,10 +141,10 @@ MODELSETS = {
         "speech": [
             "facebook/wav2vec2-base",#self-supervised
             "facebook/wav2vec2-large",
-            "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
+            # "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
             "facebook/hubert-base-ls960",
-            "facebook/hubert-large-ll60k",
-            "facebook/hubert-xlarge-ll60k",
+            # "facebook/hubert-large-ll60k",
+            # "facebook/hubert-xlarge-ll60k",
             "facebook/data2vec-audio-base",
             "microsoft/wavlm-base",
             "microsoft/unispeech-sat-base",
