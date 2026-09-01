@@ -83,7 +83,7 @@ def run_experiment(image_models, text_models,modalities, file_path, num_chunks=1
         )
 
     print(f"Final results {type}:", results)
-    plot_results(results, f"{type}{'_' + cka_type if cka_type else ''}{'_sigma' + str(rbf_sigma) if type == 'cka' and cka_type == 'rbf' else ''}{'_biased' if biased else ''}")
+    plot_results(results, f"{modalities[0]}_{modalities[1]}_{type}{'_' + cka_type if cka_type else ''}{'_sigma' + str(rbf_sigma) if type == 'cka' and cka_type == 'rbf' else ''}{'_biased' if biased else ''} ")
     return None
 
 def belongs_to_family(image_model, family):
@@ -105,7 +105,7 @@ def belongs_to_family(image_model, family):
 
     return family in image_model
 
-def plot_results(results, type):
+def plot_results(results, type, modalities=["image", "text"]):
     '''
     Results contains mutual KNN and std for each image-text model pair, for each layer combination.
     This function plots the mean mutual KNN for each image-text model pair, with error bars
