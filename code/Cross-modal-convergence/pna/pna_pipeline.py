@@ -5,7 +5,7 @@ from tqdm import tqdm, trange
 import torch
 import gc
 import torchvision
-from transformers import AutoModel, AutoTokenizer, AutoImageProcessor, ViTImageProcessor, ViTModel, AutoProcessor
+from transformers import AutoModel, AutoTokenizer, AutoImageProcessor, ViTImageProcessor, ViTModel, AutoProcessor, AutoFeatureExtractor
 import os
 from pna_data import build_flikr8k_text_audio_image, get_image_files, get_audio_files, EMB_DIR, OFF_LOAD_FOLDER_COLAB, OFF_LOAD_FOLDER_LOCAL
 from pna_models import get_models
@@ -130,10 +130,10 @@ def check_device():
 
 def load_speech_model(model_name, cuda=True):
     device = check_device()
-    dtype = float32
+    dtype = torch.float32
     # dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
     print(f"Loading model: {model_name} with dtype: {dtype} and device: {device}")
-    processor = AutoProcessor.from_pretrained(model_name)
+    processor = AutoFeatureExtractor.from_pretrained(model_name)
     model = AutoModel.from_pretrained(
         model_name,
         output_hidden_states=True,
@@ -230,7 +230,7 @@ def extract_speech(text_data, model_name,modality, device, batch_size, cuda=True
                 "dtype": str(chunk_tensor.dtype),
             }, batch_num=c_index)
 
-    del chunk_feats, chunk_tensor
+        del chunk_feats, chunk_tensor
     delete_hf_cached_model(model_name)
     gc.collect()
     if torch.cuda.is_available():

@@ -413,16 +413,28 @@ if __name__ == "__main__":
 
     image_models = get_models("test", "image")
     text_models = get_models("test", "text")
+    speech_models = get_models("test", "speech")
 
     num_chunks = 10 
     if test == True:
         num_chunks = 1
 
+
+    # BASELINES
+    # image-text convergence
     # mKNN
-    run_experiment(image_models, text_models, num_chunks=num_chunks, topk=10,type="mknn", file_path="../plots/results/knn/mutual_knn_results.txt")
+    # run_experiment(image_models, text_models, num_chunks=num_chunks, topk=10,type="mknn", file_path="../plots/text_image/knn/mutual_knn_results.txt")
     # CKA linear & RBF
-    run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/results/cka/cka_linear_results_unbiased.txt")
+    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/text_image/cka/cka_linear_results_unbiased.txt")
     # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, biased=False, file_path="../plots/results/cka/cka_rbf_results_unbiased.txt")
 
     
 
+    # image-speech convergence
+    run_experiment(image_models, speech_models, num_chunks=num_chunks, topk=10,type="mknn", file_path="../plots/image_speech/knn/mutual_knn_results.txt")
+    # CKA linear & RBF
+    run_experiment(image_models, speech_models, num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/image_speech/cka/cka_linear_results_unbiased.txt")
+    # run_experiment(image_models, speech_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, biased=False, file_path="../plots/results/cka/cka_rbf_results_unbiased.txt")
+
+
+    # image-text convergence
