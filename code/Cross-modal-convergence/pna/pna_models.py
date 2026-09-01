@@ -79,7 +79,6 @@ MODELSETS = {
             "microsoft/unispeech-sat-base", # double check
             "microsoft/unispeech-sat-large", #double check
             
-            # "facebook/w2v-bert-2.0", # conformer
             # "openai/whisper-tiny", # only use encodings
             # "openai/whisper-base",
             # "openai/whisper-small",
@@ -142,12 +141,24 @@ MODELSETS = {
             "facebook/wav2vec2-base",#self-supervised
             "facebook/wav2vec2-large",
             # "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
+            "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
+
+            "facebook/wav2vec2-xls-r-300m", # cross lingual (larger pretrained dataset), not fine tuned, just checkpoints
+            "facebook/wav2vec2-xls-r-1b",
+
             "facebook/hubert-base-ls960",
-            # "facebook/hubert-large-ll60k",
+            "facebook/hubert-large-ll60k",
             # "facebook/hubert-xlarge-ll60k",
-            "facebook/data2vec-audio-base",
+
+            # "facebook/data2vec-audio-base",
+            # "facebook/data2vec-audio-large",
+
             "microsoft/wavlm-base",
-            "microsoft/unispeech-sat-base",
+            "microsoft/wavlm-base-plus",
+            # "microsoft/wavlm-large",
+
+            "microsoft/unispeech-sat-base", # double check
+            # "microsoft/unispeech-sat-large", #double check
         ],
     }
 }
