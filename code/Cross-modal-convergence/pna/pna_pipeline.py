@@ -130,7 +130,8 @@ def check_device():
 
 def load_speech_model(model_name, cuda=True):
     device = check_device()
-    dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
+    dtype = float32
+    # dtype = torch.float16 if device.type in ["cuda", "mps"] else torch.float32
     print(f"Loading model: {model_name} with dtype: {dtype} and device: {device}")
     processor = AutoProcessor.from_pretrained(model_name)
     model = AutoModel.from_pretrained(
