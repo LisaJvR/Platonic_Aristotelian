@@ -13,13 +13,13 @@ from sklearn.linear_model import LinearRegression
 
 import numpy as np
 
-def calculate_score(feats_image, text_model, topk, type="mknn",subtype="linear", rbf_sigma=1.0, num_chunks=10, biased=False):
+def calculate_score(feats_image, text_model, modalities, topk, type="mknn",subtype="linear", rbf_sigma=1.0, num_chunks=10, biased=False):
     "calculate the mutualknn accuarcy, but only for one caption per image, then do it over all 5 captions and get mean and std"
     if type == "mknn":
         image_knn = knn_layers(feats_image, topk)
 
     for i in range(5):
-        feats_text = load_all_chunks(text_model, "text", num_chunks=num_chunks, caption_number=i)
+        feats_text = load_all_chunks(text_model, modalities[1], num_chunks=num_chunks, caption_number=i)
 
         if type == "mknn":
             text_knn = knn_layers(feats_text, topk)
@@ -34,7 +34,7 @@ def calculate_score(feats_image, text_model, topk, type="mknn",subtype="linear",
 
     return all_scores.mean(dim=0)
 
-def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10, type="mknn", cka_type=None, rbf_sigma=1.0, biased=False):
+def run_experiment(image_models, text_models,modalities, file_path, num_chunks=10, topk=10, type="mknn", cka_type=None, rbf_sigma=1.0, biased=False):
     
     results = {}
 
@@ -59,7 +59,7 @@ def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10,
 
 
     for image_model in tqdm(image_models, desc=f"{type}: Processing image model:", leave=False):
-        image_feats = load_all_chunks(image_model, "image", num_chunks=num_chunks)
+        image_feats = load_all_chunks(image_model, modalities[0], num_chunks=num_chunks)
 
         if image_feats is None:
             print(f"Warning: No embeddings found for {image_model} Skipping.")
@@ -70,7 +70,7 @@ def run_experiment(image_models, text_models, file_path, num_chunks=10, topk=10,
                 print(f"Skipping {image_model} and {text_model} as results already exist.")
                 continue
 
-            scores = calculate_score(image_feats, text_model, topk=topk, type=type, subtype=cka_type, rbf_sigma=rbf_sigma, biased=biased, num_chunks=num_chunks)
+            scores = calculate_score(image_feats, text_model,modalities=modalities, topk=topk, type=type, subtype=cka_type, rbf_sigma=rbf_sigma, biased=biased, num_chunks=num_chunks)
             results[(image_model, text_model)] = scores.max().item()
 
             with open(file_path, "a") as f:
@@ -423,17 +423,17 @@ if __name__ == "__main__":
     # BASELINES
     # image-text convergence
     # mKNN
-    # run_experiment(image_models, text_models, num_chunks=num_chunks, topk=10,type="mknn", file_path="../plots/text_image/knn/mutual_knn_results.txt")
+    # run_experiment(image_models, text_models,modalities="image,text", num_chunks=num_chunks, topk=10,type="mknn", file_path="../plots/text_image/knn/mutual_knn_results.txt")
     # CKA linear & RBF
-    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/text_image/cka/cka_linear_results_unbiased.txt")
-    # run_experiment(image_models, text_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, biased=False, file_path="../plots/results/cka/cka_rbf_results_unbiased.txt")
+    # run_experiment(image_models,modalities="image,text", num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/text_image/cka/cka_linear_results_unbiased.txt")
+    # run_experiment(image_models, text_models,modalities="image,text", num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, biased=False, file_path="../plots/results/cka/cka_rbf_results_unbiased.txt")
 
     
 
     # image-speech convergence
-    run_experiment(image_models, speech_models, num_chunks=num_chunks, topk=10,type="mknn", file_path="../plots/image_speech/knn/mutual_knn_results.txt")
+    run_experiment(image_models, speech_models,modalities="image,speech", num_chunks=num_chunks, topk=10,type="mknn", file_path="../plots/image_speech/knn/mutual_knn_results.txt")
     # CKA linear & RBF
-    run_experiment(image_models, speech_models, num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/image_speech/cka/cka_linear_results_unbiased.txt")
+    run_experiment(image_models, speech_models,modalities="image,speech", num_chunks=num_chunks, type="cka", cka_type="linear", biased=False, file_path="../plots/image_speech/cka/cka_linear_results_unbiased.txt")
     # run_experiment(image_models, speech_models, num_chunks=num_chunks, type="cka", cka_type="rbf", rbf_sigma=1.0, biased=False, file_path="../plots/results/cka/cka_rbf_results_unbiased.txt")
 
 
