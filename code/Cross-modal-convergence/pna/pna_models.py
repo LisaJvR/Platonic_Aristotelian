@@ -140,7 +140,11 @@ MODELSETS = {
         ],
         "speech": [
             "facebook/wav2vec2-base",#self-supervised
+            "facebook/wav2vec2-large",
+            "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
             "facebook/hubert-base-ls960",
+            "facebook/hubert-large-ll60k",
+            "facebook/hubert-xlarge-ll60k",
             "facebook/data2vec-audio-base",
             "microsoft/wavlm-base",
             "microsoft/unispeech-sat-base",
@@ -157,113 +161,109 @@ def get_models(modelset, modality):
 import re
 
 def pretty_model_name(model_name: str) -> str:
+    "only want the size displayed"
     name = model_name.lower()
 
     # ---------- Vision ----------
     if "dinov2" in name:
         size = re.search(r"vit_(tiny|small|base|large|giant)", name)
         size = size.group(1) if size else ""
-        return f"DINOv2 ({size})"
+        return size
 
     if ".mae" in name:
         size = re.search(r"vit_(tiny|small|base|large|huge)", name)
         size = size.group(1) if size else ""
-        return f"MAE ({size})"
+        return size
 
     if "clip" in name:
         size = re.search(r"vit_(tiny|small|base|large|huge)", name)
         size = size.group(1) if size else ""
 
         if "_ft_in12k" in name:
-            return f"CLIP ({size}, IN12K-ft)"
+            return size + " (CLIP, fine-tuned on ImageNet-12k)"
 
-        return f"CLIP ({size})"
+        return size
 
     if "augreg" in name:
         size = re.search(r"vit_(tiny|small|base|large)", name)
         size = size.group(1) if size else ""
-        return f"ViT ({size})"
+        return size
 
     if "data2vec-vision" in name:
         size = model_name.split("-")[-1]
-        return f"data2vec Vision ({size})"
+        return size
 
     # ---------- Text ----------
     if "bloom" in name:
-        size = model_name.split("-")[-1]
-        return f"BLOOM ({size.upper()})"
+        return model_name.split("-")[-1]
 
     if "open_llama" in name:
-        size = model_name.split("_")[-1]
-        return f"OpenLLaMA ({size.upper()})"
+        return model_name.split("_")[-1]
 
     if "huggyllama/llama" in name:
-        size = model_name.split("-")[-1]
-        return f"LLaMA ({size.upper()})"
+        return model_name.split("-")[-1]
 
     if "meta-llama-3" in name:
-        size = model_name.split("-")[-1]
-        return f"LLaMA 3 ({size.upper()})"
+        return  model_name.split("-")[-1]
 
     if "gemma" in name:
-        size = model_name.split("-")[-1]
-        return f"Gemma ({size.upper()})"
+        return model_name.split("-")[-1]
 
     if "mistral-" in name:
         size = re.search(r"(\d+b)", name)
         size = size.group(1).upper() if size else ""
-        return f"Mistral ({size})"
+        return size
 
     if "mixtral" in name:
         size = re.search(r"(\d+x\d+b)", name)
         size = size.group(1).upper() if size else ""
-        return f"Mixtral ({size})"
+        return size
 
     if "olmo" in name:
         size = re.search(r"(\d+b)", name)
         size = size.group(1).upper() if size else ""
-        return f"OLMo ({size})"
+        return size
 
     if "data2vec-text" in name:
         size = model_name.split("-")[-1]
-        return f"data2vec Text ({size})"
+        return size
 
     # ---------- Speech ----------
     if "wav2vec2-xls-r" in name:
         size = model_name.split("-")[-1]
-        return f"XLS-R ({size.upper()})"
+        return size
 
     if "wav2vec2" in name:
         if "large-robust" in name:
-            return "wav2vec 2.0 (large, robust)"
+            return "large (robust)"
         if "large-lv60" in name:
-            return "wav2vec 2.0 (large, LV60)"
+            return"large (lv60)"
         if "large" in name:
-            return "wav2vec 2.0 (large)"
+            return "large"
         if "base" in name:
-            return "wav2vec 2.0 (base)"
+            return "base"
 
     if "hubert" in name:
         if "xlarge" in name:
-            return "HuBERT (xlarge)"
+            return "xlarge"
         if "large" in name:
-            return "HuBERT (large)"
+            return "large"
         if "base" in name:
-            return "HuBERT (base)"
+            return "base"
 
     if "data2vec-audio" in name:
         size = model_name.split("-")[-1]
-        return f"data2vec Audio ({size})"
+        return size
 
     if "wavlm" in name:
         if "base-plus" in name:
-            return "WavLM (base+)"
+            return "base+"
         size = model_name.split("-")[-1]
-        return f"WavLM ({size})"
+        return size
 
     if "unispeech-sat" in name:
         size = model_name.split("-")[-1]
-        return f"UniSpeech-SAT ({size})"
+        return size
 
     # fallback
     return model_name
@@ -279,27 +279,14 @@ def get_size(model_name):
             return "base"
         if "large" in name:
             return "large"
+        if "xlarge" in name:
+            return "xlarge"
         if "huge" in name:
             return "huge"
         if "giant" in name:
             return "giant"
 
         return "base"
-
-def pretty_text_name(model_name):
-        """Only the model size displayed on the tick."""
-        name = model_name.lower()
-
-        if "bloom-" in name:
-            return model_name.split("-")[-1]
-
-        if "open_llama_" in name:
-            return model_name.split("_")[-1]
-
-        if "huggyllama/llama-" in name:
-            return model_name.split("-")[-1]
-
-        return model_name.split("/")[-1]
 
 def text_family(model_name):
         name = model_name.lower()
@@ -310,5 +297,39 @@ def text_family(model_name):
             return "OpenLLaMA"
         if "huggyllama" in name:
             return "LLaMA"
+
+        return ""
+
+def image_family(model_name):
+        name = model_name.lower()
+
+        if "dinov2" in name:
+            return "DINOv2"
+        if ".mae" in name:
+            return "MAE"
+        if "clip" in name:
+            return "CLIP"
+        if "augreg" in name:
+            return "ViT"
+        if "data2vec-vision" in name:
+            return "D2V Vision"
+
+        return ""
+
+def speech_family(model_name):
+        name = model_name.lower()
+
+        if "wav2vec2-xls-r" in name:
+            return "XLS-R"
+        if "wav2vec2" in name:
+            return "wav2vec 2.0"
+        if "hubert" in name:
+            return "HuBERT"
+        if "data2vec-audio" in name:
+            return "D2V Audio"
+        if "wavlm" in name:
+            return "WavLM"
+        if "unispeech-sat" in name:
+            return "UniSpeech-SAT"
 
         return ""
