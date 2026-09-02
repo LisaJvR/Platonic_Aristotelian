@@ -59,51 +59,6 @@ def save_to_dir(avg_features,meta_data, batch_num=None):
         torch.save(output,os.path.join(dir_path, "features_all.pt"))
         print(f"Saved features to: {dir_path}/features_all.pt")
 
-def save_dataset_index(df, modality):
-    if f"{EMB_DIR}/{modality}" not in os.listdir(EMB_DIR):
-        os.makedirs(f"{EMB_DIR}/{modality}", exist_ok=True)
-    if f"{EMB_DIR}/{modality}/dataset_index.csv" in os.listdir(f"{EMB_DIR}/{modality}"):
-        print(f"Dataset index for {modality} already exists. Skipping save.")
-        return
-    
-    if modality == "text":
-        index_df = (
-        df[["image", "caption_number"]]
-        .sort_values(["image", "caption_number"])
-        .reset_index(drop=True)
-    )
-
-        index_df.to_csv(
-            f"{EMB_DIR}/text/dataset_index.csv",
-            index=False
-        )
-        print(f"Saved text dataset index to: {EMB_DIR}/text/dataset_index.csv")
-
-    elif modality == "image":
-        index_df = (
-        df[["image"]]
-        .sort_values(["image"])
-        .reset_index(drop=True)
-    )
-
-        index_df.to_csv(
-            f"{EMB_DIR}/image/dataset_index.csv",
-            index=False
-        )
-        print(f"Saved image dataset index to: {EMB_DIR}/image/dataset_index.csv")
-
-    elif modality == "speech":
-        index_df = (
-        df[["image", "caption_number"]]
-        .sort_values(["image", "caption_number"])
-        .reset_index(drop=True)
-    )
-
-        index_df.to_csv(
-            f"{EMB_DIR}/speech/dataset_index.csv",
-            index=False
-        )
-        print(f"Saved speech dataset index to: {EMB_DIR}/speech/dataset_index.csv")
 
 def check_prior_extraction(safe_model_name, modality, chunk):
     # check if the directory with modality and model has files in it return boolean
@@ -142,16 +97,6 @@ def load_speech_model(model_name, cuda=True):
     )
     print(f"Loading model: {model_name} with dtype: {dtype} and device: {device}")
     return processor, model, dtype
-
-def make_mono(waveform):
-    print(f"Original waveform shape: {waveform}")
-    if waveform.shape[0] > 1:
-        waveform = waveform.mean(dim=0, keepdim=True)  # Convert to mono by averaging channels
-        print(f"Converted to mono waveform shape: {waveform.shape}")
-    else:
-        waveform = waveform.squeeze(0)  # Remove the channel dimension if it's already mono
-        print(f"Already mono waveform shape: {waveform.shape}")
-    return waveform.numpy().astype('float16')  # Convert to numpy array and ensure it's float32
 
 def load_audio(path):
     waveform, sr = torchaudio.load(path)

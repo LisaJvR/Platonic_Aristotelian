@@ -157,7 +157,7 @@ MODELSETS = {
             "microsoft/wavlm-base-plus",
             # "microsoft/wavlm-large",
 
-            "microsoft/unispeech-sat-base", # double check
+            # "microsoft/unispeech-sat-base", # double check
             # "microsoft/unispeech-sat-large", #double check
         ],
     }
@@ -333,14 +333,14 @@ def speech_family(model_name):
         if "wav2vec2-xls-r" in name:
             return "XLS-R"
         if "wav2vec2" in name:
-            return "wav2vec 2.0"
+            return "W2V"
         if "hubert" in name:
-            return "HuBERT"
+            return "HB"
         if "data2vec-audio" in name:
-            return "D2V Audio"
+            return "D2V"
         if "wavlm" in name:
             return "WavLM"
         if "unispeech-sat" in name:
-            return "UniSpeech-SAT"
+            return "US-SAT"
 
         return ""

@@ -4,6 +4,7 @@ import os
 import PIL
 from PIL import Image
 import torch
+import wave
 
 path = kagglehub.dataset_download("adityajn105/flickr8k") # Flickr 8k Dataset
 path_audio = kagglehub.dataset_download("warcoder/flickr-8k-audio-caption-corpus")
@@ -22,19 +23,45 @@ print("Path to token_file files:", token_text_path)
 def get_flickr8k_dataset_paths():
     return path, path_audio
 
+def get_audio_length(df):
+    for audio_file in df["audio"].unique():
+            audio_path = os.path.join(get_flickr8k_dataset_paths()[1], "flickr_audio/flickr_audio/wavs", audio_file)
+            if os.path.exists(audio_path):
+                with wave.open(str(audio_path), "rb") as wav_file:
+                    num_frames = wav_file.getnframes()
+                    sample_rate = wav_file.getframerate() # all 16kHz
+                    length_in_seconds = num_frames / sample_rate
+                    df["audio_length"] = length_in_seconds
+            else:
+                print(f"Warning: {audio_file} not found in the dataset.")
+    return df
+
 def remove_outliers(df, lower_quantile=0.01, upper_quantile=0.99):
+    """
+    From the original dataset, remove the text outliers (length) and audio (length)
+    Then return filtered (the combination of what is left)
+    """
     df = df.copy()
 
     df["caption_length"] = df["caption"].apply(lambda x: len(x.split()))
+    df = get_audio_length(df)
 
-    lower_bound = df["caption_length"].quantile(lower_quantile)
-    upper_bound = df["caption_length"].quantile(upper_quantile)
+    lower_bound_text = df["caption_length"].quantile(lower_quantile)
+    upper_bound_text = df["caption_length"].quantile(upper_quantile)
+    lower_bound_audio = df["audio_length"].quantile(lower_quantile)
+    upper_bound_audio = df["audio_length"].quantile(upper_quantile)
+
+    lower_bound_speaker = df.groupby("speaker").size().quantile(0.1)
+    upper_bound_speaker = df.groupby("speaker").size().quantile(0.9)
     
-    filtered_df = df[(df["caption_length"] >= lower_bound) & (df["caption_length"] <= upper_bound)]
+    filtered_df = df[(df["caption_length"] >= lower_bound_text) & (df["caption_length"] <= upper_bound_text) & 
+                     (df["audio_length"] >= lower_bound_audio) & (df["audio_length"] <= upper_bound_audio) &
+                     (df.groupby("speaker").size() >= lower_bound_speaker) & (df.groupby("speaker").size() <= upper_bound_speaker)]
     
     return filtered_df
 
 def build_flikr8k_text_audio_image():
+    
     # Get the paths to the Flickr8k dataset files
     path, path_audio = get_flickr8k_dataset_paths()
 
@@ -60,6 +87,12 @@ def build_flikr8k_text_audio_image():
         audio_caption_df["caption_number"].str.replace("#", "", regex=False)
         .astype(int)
     )
+    speaker_caption_df = pd.read_csv(
+        path_audio + "/wav2spk.txt",sep=r"\s+",header=None,names=["audio", "speaker"])
+
+    audio_caption_df = audio_caption_df.merge(
+        speaker_caption_df, on="audio", how="left", validate="one_to_one"
+    )
 
     # merge into one refence db
     all_df = pd.merge(
@@ -68,7 +101,7 @@ def build_flikr8k_text_audio_image():
         validate="one_to_one"
     )
 
-    all_df = all_df[["image", "caption_number", "audio", "caption",]]
+    all_df = all_df[["image", "caption_number", "speaker", "audio", "caption"]]
 
     # sort by image and caption_number
     all_df = all_df.sort_values(by=["image", "caption_number"]).reset_index(drop=True)
@@ -83,6 +116,12 @@ def build_flikr8k_text_audio_image():
     all_df.to_csv(df_path, index=False)
 
     all_df = remove_outliers(all_df, lower_quantile=0.01, upper_quantile=0.99)
+    print("Shape of cleaned dataframe:", all_df.shape)
+    print(all_df.head())
+
+    save_dataset_index(all_df, "text")
+    save_dataset_index(all_df, "image")
+    save_dataset_index(all_df, "speech")
 
     return all_df
 
@@ -175,6 +214,56 @@ def print_meta_info(model_name, modality, chunk_number):
     print("Avg shape:", data["avg"].shape)
     print("Avg dtype:", data["avg"].dtype)
 
+def normalize_speakers(df, index):
+    #XXX TODO
+    return None
+
+def save_dataset_index(df, modality):
+    if f"{EMB_DIR}/{modality}" not in os.listdir(EMB_DIR):
+        os.makedirs(f"{EMB_DIR}/{modality}", exist_ok=True)
+    if f"{EMB_DIR}/{modality}/dataset_index.csv" in os.listdir(f"{EMB_DIR}/{modality}"):
+        print(f"Dataset index for {modality} already exists. Skipping save.")
+        return
+    
+    if modality == "text":
+        index_df = (
+        df[["image", "caption_number"]]
+        .sort_values(["image", "caption_number"])
+        .reset_index(drop=True)
+    )
+
+        index_df.to_csv(
+            f"{EMB_DIR}/text/dataset_index.csv",
+            index=False
+        )
+        print(f"Saved text dataset index to: {EMB_DIR}/text/dataset_index.csv")
+
+    elif modality == "image":
+        index_df = (
+        df[["image"]]
+        .sort_values(["image"])
+        .reset_index(drop=True)
+    )
+
+        index_df.to_csv(
+            f"{EMB_DIR}/image/dataset_index.csv",
+            index=False
+        )
+        print(f"Saved image dataset index to: {EMB_DIR}/image/dataset_index.csv")
+
+    elif modality == "speech":
+        index_df = (
+        df[["image", "caption_number"]]
+        .sort_values(["image", "caption_number"])
+        .reset_index(drop=True)
+    )
+
+        index_df.to_csv(
+            f"{EMB_DIR}/speech/dataset_index.csv",
+            index=False
+        )
+        print(f"Saved speech dataset index to: {EMB_DIR}/speech/dataset_index.csv")
+
 
 def get_captions_from_index(modality):
     
@@ -184,7 +273,7 @@ def get_captions_from_index(modality):
     index_df = index_df.reset_index(names="embedding_index")
 
     mapped_df = index_df.merge(
-        dataset[["image", "caption_number", "caption"]],
+        dataset[["image", "caption_number", "caption","speaker"]],
         on=["image", "caption_number"],
         how="left",
         validate="one_to_one"
@@ -192,4 +281,5 @@ def get_captions_from_index(modality):
 
     return mapped_df # returns: embedding_index, image, caption_number, caption
 
-    
+if __name__ == "__main__":
+    all_df = build_flikr8k_text_audio_image()
