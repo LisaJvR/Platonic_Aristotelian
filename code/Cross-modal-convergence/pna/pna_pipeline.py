@@ -19,6 +19,7 @@ import shutil
 
 data_length = 40000
 samples_per_chunk = 800*5
+CACHE_DIR = "/mnt/external/lisa/cache"
 
 def delete_hf_cached_model(model_name):
     cache_root = os.path.expanduser("/root/.cache/huggingface/hub/")
@@ -94,6 +95,7 @@ def load_speech_model(model_name, cuda=True):
         output_hidden_states=True,
         dtype=dtype,
         device_map="auto",
+        cache_dir=CACHE_DIR if CACHE_DIR else None
     )
     print(f"Loading model: {model_name} with dtype: {dtype} and device: {device}")
     return processor, model, dtype
@@ -388,6 +390,7 @@ def load_text_model(model_name, cuda=True):
         output_hidden_states=True, # want all layers
         dtype=dtype,#XXX double check if this is the best option for memory usage, could use float16 or bfloat16
         device_map="auto",
+        cache_dir=CACHE_DIR if CACHE_DIR else None
     )
 
     model.eval()
