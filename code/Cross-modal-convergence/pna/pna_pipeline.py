@@ -60,7 +60,6 @@ def save_to_dir(avg_features,meta_data, batch_num=None):
         torch.save(output,os.path.join(dir_path, "features_all.pt"))
         print(f"Saved features to: {dir_path}/features_all.pt")
 
-
 def check_prior_extraction(safe_model_name, modality, chunk):
     # check if the directory with modality and model has files in it return boolean
     save_path = f"{EMB_DIR}/{modality}/{safe_model_name}/features_{chunk}.pt"
@@ -329,7 +328,7 @@ def run_extraction(model_names, df,modality, batch_size=1, test=False):
         if test == True:
             chunk = 0
         else:
-            chunk = 9
+            chunk = 8 # XXX
 
         if check_prior_extraction(safe_model_name, modality, chunk):
             continue

@@ -67,6 +67,8 @@ def result_exists(
     metric,
     require_calibrated=False,
 ):
+    if not results or len(results) == 0:
+        return False
     for row in results:
 
         if (
@@ -167,6 +169,8 @@ def compute_calibrated_score(
         S = S.mean(dim=1)
 
         return S.max()
+    
+    print(f"Calibrating with K={K}...")
 
     return calibrate_layers(
         X_layers,
@@ -181,6 +185,7 @@ def evaluate_pair(
     feats_B_list,
     metric_config,
     calibrate=False,
+    calibration_K=200,
 ):
     # new calculate score code
 
@@ -197,10 +202,6 @@ def evaluate_pair(
     # XXX issue 
     # raw_score: model_name, model_name, max_score
     # layer_scores: model_name, model_name, [L_A, L_B]
-    print(f"Layer scores: {layer_scores}")
-    print(f"Layer scores max: {layer_scores.max()}")
-    print(f"Layer scores max item: {layer_scores.max().item()}")
-
     
     result = {
         "raw_score": layer_scores.max().item(),
@@ -214,6 +215,7 @@ def evaluate_pair(
             feats_B_list,
             metric_fn,
             kwargs,
+            K=calibration_K,
         )
 
         # XXX issue
@@ -237,6 +239,7 @@ def run_experiment(
     experiment_name,
     metric_name,
     EXPERIMENTS,
+    results_file,
     model_set="all",
     num_chunks=10,
     clip=False,
@@ -244,7 +247,6 @@ def run_experiment(
     q=0.9,
     calibrate=False,
     calibration_K=200,
-    results_file="../plots/results/results.csv",
 ):
 
     experiment = EXPERIMENTS[experiment_name]
@@ -308,7 +310,7 @@ def run_experiment(
                 feats_B_list,
                 metric_config,
                 calibrate=calibrate,
-                # calibration_K=calibration_K,
+                calibration_K=calibration_K,
             )
 
             result = {
@@ -333,6 +335,7 @@ def run_experiment(
 def experiment_driver(
     experiment_names,
     EXPERIMENTS,
+    results_file,
     model_set="all",
     num_chunks=10,
     clip=False,
@@ -340,8 +343,7 @@ def experiment_driver(
     q=0.9,
     calibrate=False,
     calibration_K=200,
-    plot=True,
-    results_file="../plots/results/results.csv",
+    plot=True
 ):
 
     for experiment_name in experiment_names:
@@ -357,6 +359,7 @@ def experiment_driver(
             run_experiment(
                 experiment_name=experiment_name,
                 EXPERIMENTS=EXPERIMENTS,
+                results_file=results_file,
                 metric_name=metric_name,
                 model_set=model_set,
                 num_chunks=num_chunks,
@@ -479,7 +482,7 @@ def results_to_dict(
     return results
 
 if __name__ == "__main__":
-     EXPERIMENTS = {
+    EXPERIMENTS = {
     "image_text": {
         "modalities": ("image", "text"),
         "n_sets": 5,
@@ -508,9 +511,13 @@ if __name__ == "__main__":
     },
 }
     # data lenth // samples in a chunk
-     number_of_chunks = 34380 // 4000
+    #  number_of_chunks = 34380 // 4000
+    number_of_chunks =1
 
-     experiment_driver(
+    results_files = "../results/metrics"
+    os.mkdir(results_files) if not os.path.exists("../results/metrics") else None
+    
+    experiment_driver(
         experiment_names=[
             "image_text",
             # "speech_text",
@@ -522,7 +529,16 @@ if __name__ == "__main__":
         clip=False,
         exact=False,
         q=0.9,
-        calibrate=False,
-        calibration_K=200,
-        results_file="../plots/results/results.csv",
+        calibrate=True,
+        calibration_K=10,# XXX 200
+        plot=True,
+        results_file=f"{results_files}/results.csv",
     )
+
+    # plot_experiment_results(
+    #     results_file=f"{results_files}/results.csv",
+    #     experiment_name="image_text",
+    #     EXPERIMENTS=EXPERIMENTS,
+    #     metric_name="mknn_k10",
+    #     calibrated=False,
+    # )

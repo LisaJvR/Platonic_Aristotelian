@@ -7,35 +7,6 @@ from pna_metrics import (
     compute_cknna,
 )
 
-EXPERIMENTS = {
-    "image_text": {
-        "modalities": ("image", "text"),
-        "n_sets": 5,
-        "metrics": [
-            "mknn_k10",
-            "cka_linear_unbiased",
-        ],
-    },
-
-    "speech_text": {
-        "modalities": ("speech", "text"),
-        "n_sets": 1,
-        "metrics": [
-            "mknn_k10",
-            "cka_linear_unbiased",
-        ],
-    },
-
-    "image_speech": {
-        "modalities": ("image", "speech"),
-        "n_sets": 5,
-        "metrics": [
-            "mknn_k10",
-            "cka_linear_unbiased",
-        ],
-    },
-}
-
 
 METRICS = {
     "mknn_k10": {

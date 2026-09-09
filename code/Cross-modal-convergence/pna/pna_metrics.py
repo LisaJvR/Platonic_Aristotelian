@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from calibrated_similarity import calibrate, calibrate_layers
+import CCA
 
 def hsic_biased(A, B):
     n = A.shape[0]
@@ -13,23 +14,21 @@ def hsic_unbiased(A, B):
     Eqn 5 from: https://jmlr.csail.mit.edu/papers/volume13/song12a/song12a.pdf
     '''
     m = A.shape[0]
-    
     # Zero out the diagonal elements of K and L
     A_tilde = A.clone().fill_diagonal_(0)
     B_tilde = B.clone().fill_diagonal_(0)
     
     # Compute HSIC using the formula in Equation 5
     HSIC_value = (
-                (torch.sum(A_tilde * B_tilde.T))
-                + (torch.sum(A_tilde) * torch.sum(B_tilde) / ((m - 1) * (m - 2)))
-                - (2 * torch.sum(torch.mm(A_tilde, B_tilde)) / (m - 2))
-            )
+        (torch.sum(A_tilde * B_tilde.T))
+        + (torch.sum(A_tilde) * torch.sum(B_tilde) / ((m - 1) * (m - 2)))
+        - (2 * torch.sum(torch.mm(A_tilde, B_tilde)) / (m - 2))
+        )
     
     HSIC_value /= m * (m - 3)
     return HSIC_value
 
 def hsic(A, B, unbiased=False):
-  
     if unbiased:
         return hsic_unbiased(A, B)
     else:
@@ -41,6 +40,7 @@ def compute_cka(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=False
     '''
     feats_A = feats_A.to(torch.float64)
     feats_B = feats_B.to(torch.float64)
+
     if kernel == "linear":
         kernel_A = torch.mm(feats_A, feats_A.T)
         kernel_B = torch.mm(feats_B, feats_B.T)
@@ -53,10 +53,56 @@ def compute_cka(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=False
     H_BB = hsic(kernel_B, kernel_B, unbiased=unbiased)
     H_AB = hsic(kernel_A, kernel_B, unbiased=unbiased)
 
-    # cka_value = H_AB / (torch.sqrt(H_AA * H_BB) + 1e-6)  
-    cka_value = H_AB / (torch.sqrt(H_AA * H_BB))  
+    cka_value = H_AB / (torch.sqrt(H_AA * H_BB) + 1e-6)  
+    # cka_value = H_AB / (torch.sqrt(H_AA * H_BB))  
     return cka_value.item()
 
+
+
+def compute_cknna(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=False, topk=10, distance_agnostic=False):
+    '''
+        From: Adapted from Koepke, https://github.com/minyoungg/platonic-rep/blob/main/metrics.py#L111
+        '''
+    feats_A = feats_A.to(torch.float64)
+    feats_B = feats_B.to(torch.float64)
+        
+    if kernel == "linear":
+            kernel_A = torch.mm(feats_A, feats_A.T)
+            kernel_B = torch.mm(feats_B, feats_B.T)
+    
+    elif kernel == "rbf":
+            kernel_A = torch.exp(-torch.cdist(feats_A, feats_A) ** 2 / (2 * rbf_sigma ** 2))
+            kernel_B = torch.exp(-torch.cdist(feats_B, feats_B) ** 2 / (2 * rbf_sigma ** 2))
+
+    def similarity(kernel_A, kernel_B, topk):
+        if unbiased:
+            K_hat = kernel_A.clone().fill_diagonal_(float("-inf"))
+            L_hat = kernel_B.clone().fill_diagonal_(float("-inf"))
+        else:
+             K_hat, L_hat = kernel_A, kernel_B
+
+        _, topk_K_indices = torch.topk(K_hat, topk, dim=1)
+        _, topk_L_indices = torch.topk(L_hat, topk, dim=1)
+
+        n = kernel_A.shape[0]
+        mask_K = torch.zeros(n, n).scatter_(1, topk_K_indices, 1)
+        mask_L = torch.zeros(n, n).scatter_(1, topk_L_indices, 1)
+        mask = mask_K * mask_L
+
+        if distance_agnostic:
+                sim = mask * 1.0
+        else:
+            if unbiased:
+                    sim = hsic_unbiased(mask * kernel_A, mask * kernel_B)
+            else:
+                    sim = hsic_biased(mask * kernel_A, mask * kernel_B)
+        return sim
+
+    sim_kl = similarity(kernel_A, kernel_B, topk)
+    sim_kk = similarity(kernel_A, kernel_A, topk)
+    sim_ll = similarity(kernel_B, kernel_B, topk)
+
+    return sim_kl.item() / (torch.sqrt(sim_kk * sim_ll) + 1e-6).item()
 
 def mutual_knn(knn_A, knn_B):
     '''
@@ -80,17 +126,46 @@ def compute_mutual_knn(feats_A, feats_B, topk):
 # TODO --------------------------------------
 
 def compute_rsa(X,Y):
+    """How dissimilar the representations are"""
 
     return None
 
-def compute_svcca(X,Y):
-    return None
+def center_and_scale(act):
+    act = act - torch.mean(act, axis=0)
+    act = act / (torch.std(act, axis=0) + 1e-8)
+    return act
+
+def compute_svcca(X,Y,cca_dim=10):
+    ''' From the platonic paper'''
+    c_X = center_and_scale(X)
+    c_Y = center_and_scale(Y)
+
+    # SVD
+    U1, _, _ = torch.svd_lowrank(c_X, q=cca_dim)
+    U2, _, _ = torch.svd_lowrank(c_Y, q=cca_dim)
+
+    U1 = U1.cpu().detach().numpy()
+    U2 = U2.cpu().detach().numpy()
+
+    cca = CCA(n_components=cca_dim)
+    cca.fit(U1, U2)
+    U1_c, U2_c = cca.transform(U1, U2)
+
+    # sometimes it goes to nan, this is just to avoid that
+    U1_c += 1e-10 * np.random.randn(*U1_c.shape)
+    U2_c += 1e-10 * np.random.randn(*U2_c.shape)
+
+     # Compute SVCCA similarity
+    svcca_similarity = np.mean(
+            [np.corrcoef(U1_c[:, i], U2_c[:, i])[0, 1] for i in range(cca_dim)]
+    )
+    return svcca_similarity
 
 def compute_pwcca(X,Y):
+
     return None
 
-def compute_cknna(X,Y):
-    return None
+
 
 # --------------------------------------------
 

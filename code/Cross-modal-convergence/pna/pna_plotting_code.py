@@ -134,6 +134,7 @@ def plot_results(results, c_results, type, modalities, file_name):
         all_data = []
         for y_model in family_models:
 
+            # Uncalibrated ---------------------
             values = [
                 results[(y_model, x_model)]
                 for x_model in x_models
@@ -155,6 +156,29 @@ def plot_results(results, c_results, type, modalities, file_name):
             )
 
             all_data.append((x, values))
+
+        # Calibrated -----------------------------
+        if c_results:
+            calibrated_values = [
+                c_results.get((y_model, x_model), np.nan)
+                for x_model in x_models
+            ]
+
+            if not np.all(np.isnan(calibrated_values)):
+                ax.plot(
+                    x,
+                    calibrated_values,
+                    color=color,
+                    linewidth=2.5,
+                    linestyle=":",
+                    marker="o",
+                    markersize=7,
+                    markeredgewidth=0,
+                    zorder=3,
+                )
+
+        # --------------------------------------------------------
+
         all_x = np.concatenate([data[0] for data in all_data])
         all_y = np.concatenate([data[1] for data in all_data])
 
@@ -253,6 +277,36 @@ def plot_results(results, c_results, type, modalities, file_name):
             desired_order = ["base"] # XXX
 
         desired_order.append("observed = {:.4f}x ".format(coeff[0][0]))
+
+        # NEW Calibrated ------------------------- XXX check if correct
+
+        legend_handles = [unique[s] for s in desired_order]
+        legend_labels = desired_order.copy()
+        from matplotlib.lines import Line2D
+
+        if c_results:
+            legend_handles.extend([
+                Line2D(
+                    [0], [0],
+                    color="black",
+                    linewidth=2.5,
+                    linestyle="-",
+                ),
+                Line2D(
+                    [0], [0],
+                    color="black",
+                    linewidth=2.5,
+                    linestyle=":",
+                ),
+            ])
+
+            legend_labels.extend([
+                "Raw",
+                "Calibrated",
+            ])
+
+        # ------------------------------------
+
         legend = ax.legend(
                     [unique[s] for s in desired_order],
                     desired_order,
@@ -308,11 +362,11 @@ def plot_results(results, c_results, type, modalities, file_name):
             
         os.makedirs("../plots/results/", exist_ok=True)
         plt.savefig(
-                        f"../plots/results/{file_name}.png",
+                        f"../plots/results/{file_name}_{family}.png",
                         dpi=300,
                         bbox_inches="tight",
                     )
             
         plt.close(fig)
-        print(f"Saved plot for {family} in ../plots/results/{file_name}.png")
+        print(f"Saved plot for {family} in ../plots/results/{file_name}_{family}.png")
 

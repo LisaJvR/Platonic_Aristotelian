@@ -12,8 +12,8 @@ token_text_path = kagglehub.dataset_download("sealeopard/flickr8k-token-txt")
 
 df_path = "../../data/flickr8k_audio_text_image.csv"
 
-EMB_DIR = "../embeddings"
-OFF_LOAD_FOLDER_COLAB = "/content/offload" #XXX change for other system
+EMB_DIR = "../embeddings" # "/mnt/external/lisa/embeddings"
+OFF_LOAD_FOLDER_COLAB = "../../bin/offload" #XXX colab: "/content/offload"
 OFF_LOAD_FOLDER_LOCAL = "../../bin/offload"
 
 print("Path to image files:", path)
