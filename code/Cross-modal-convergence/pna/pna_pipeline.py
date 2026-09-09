@@ -94,10 +94,9 @@ def load_speech_model(model_name, cuda=True):
         model_name,
         output_hidden_states=True,
         dtype=dtype,
-        device_map="auto",
         cache_dir=CACHE_DIR if CACHE_DIR else None
     )
-    print(f"Loading model: {model_name} with dtype: {dtype} and device: {device}")
+    
     return processor, model, dtype
 
 def load_audio(path):
@@ -115,6 +114,7 @@ def extract_speech(text_data, model_name,modality, device, batch_size, cuda=True
     print("Loading model for speech extraction...")
 
     tok, model, dtype = load_speech_model(model_name, cuda=cuda) # returns eval model
+    model = model.to(device)
     length = len(audio_paths)
     chunk_samples_count = 0
     samples_per_chunk = 800*5
@@ -211,7 +211,7 @@ def load_img_models(model_name):
         offload_folder = OFF_LOAD_FOLDER_LOCAL
         os.makedirs(offload_folder, exist_ok=True)
 
-    print(f"Loading model: {model_name} with dtype: {dtype} and offload folder: {offload_folder}")
+    print(f"Loading model: {model_name} with dtype: {dtype} and cache folder: {CACHE_DIR} and offload folder: {offload_folder}")
 
     model = model.to(device, dtype=dtype).eval()
     return transform, model, dtype
@@ -499,8 +499,8 @@ if __name__ == "__main__":
     print(df.head())
 
     modelset = "test"
-    modalities = ["text", "image", "speech"]
-    modalities = ["speech"]
+    modalities = ["text", "image","speech"]
+    # modalities = ["speech"]
 
     for modality in modalities:
         print(f"Running {modelset} {modality}: --------------------------------")
@@ -509,4 +509,4 @@ if __name__ == "__main__":
 
         print(df.head())
         df_copy = df[["image", "caption_number", "caption", "audio"]].copy()#XXX not best use of storage
-        run_extraction(models, df_copy, modality=modality, batch_size=32, test=True)
+        run_extraction(models, df_copy, modality=modality, batch_size=32, test=False)
