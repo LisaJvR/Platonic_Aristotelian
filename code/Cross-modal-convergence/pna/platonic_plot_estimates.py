@@ -3,7 +3,7 @@ import numpy as np
 
 data ={
     "Platonic": {
-        "mknn": {
+        "mknn_k10": {
             "imagenet21k": {
                 "tiny": {
                     "bloom560m": 0.085,
@@ -538,7 +538,7 @@ data ={
     },
     }
 
-def get_platonic_trend(x, type= "Platonic", metric="mKNN"):
+def get_platonic_trend(x, type= "Platonic", metric="mknn_k10"):
     all_coeffs = {}
     avg_family_coeffs = {}
     for family in data[type][metric]:

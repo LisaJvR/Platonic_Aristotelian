@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import numpy as np
 from pna_models import get_size, image_family, pretty_model_name, text_family, speech_family
-
 from platonic_plot_estimates import get_platonic_trend
 
 # ------------------------------------------------------------
@@ -68,7 +67,9 @@ def belongs_to_family(image_model, family, modalities):
         return family in image_model
 
 
-def plot_results(results, type, modalities):
+
+def plot_results(results, c_results, type, modalities, file_name):
+    # TODO: implement calibrated line plotting?
     os.makedirs("../plots", exist_ok=True)
 
     plt.rcParams.update({
@@ -101,8 +102,6 @@ def plot_results(results, type, modalities):
     else:
         print(f"Warning: Unknown modality {modalities[0]}. No plots will be generated.")
 
-    
-    
     for family  in families:
         family_models = list({
             y_model
@@ -158,12 +157,12 @@ def plot_results(results, type, modalities):
             all_data.append((x, values))
         all_x = np.concatenate([data[0] for data in all_data])
         all_y = np.concatenate([data[1] for data in all_data])
-        print(f"all_x: {all_x}, all_y: {all_y}")
+
         coeff, intercept = get_reg_coeffs(all_x.reshape(-1, 1), all_y.reshape(-1, 1))
         x_trend = np.sort(all_x)
         y_trend = coeff[0][0] * x_trend + intercept[0]
 
-        if (modalities[0] == "image") & (modalities[1] == "text"):    
+        if (modalities[0] == "image") and (modalities[1] == "text"):    
             all_coeffs, avg_family_coeffs = get_platonic_trend(x,"Platonic", metric=type)
             plat_y  = all_coeffs[(family, size)] * x_trend + intercept[0]
 
@@ -240,17 +239,20 @@ def plot_results(results, type, modalities):
 
         desired_order = []
         if modalities[0] == "image":
+
             desired_order = [
                 size for size in ["tiny", "small", "base", "large", "huge", "giant"] 
                 if size in unique
             ]
+
             if (modalities[0] == "image") & (modalities[1] == "text"):
                 desired_order.append("expected = {:.4f}x ".format(avg_family_coeffs[family]))
+
         elif modalities[0] == "speech":
             desired_order = ["base", "large", "xlarge"]
+            desired_order = ["base"] # XXX
 
         desired_order.append("observed = {:.4f}x ".format(coeff[0][0]))
-        print(f"Desired order: {desired_order}, unique: {unique}")
         legend = ax.legend(
                     [unique[s] for s in desired_order],
                     desired_order,
@@ -275,8 +277,10 @@ def plot_results(results, type, modalities):
         for i, model in enumerate(x_models):
             if modalities[1] == "text":
                 f = text_family(model)
-            elif modalities[1] == "speech":
+            if modalities[1] == "speech":
                 f = speech_family(model)
+            if modalities[1] == "image":
+                f = image_family(model)
 
             if f:
                 families_x.setdefault(f, []).append(i)
@@ -304,9 +308,11 @@ def plot_results(results, type, modalities):
             
         os.makedirs("../plots/results/", exist_ok=True)
         plt.savefig(
-                        f"../plots/results/{type}_{family}_{modalities[0]}_{modalities[1]}.png",
+                        f"../plots/results/{file_name}.png",
                         dpi=300,
                         bbox_inches="tight",
                     )
             
         plt.close(fig)
+        print(f"Saved plot for {family} in ../plots/results/{file_name}.png")
+

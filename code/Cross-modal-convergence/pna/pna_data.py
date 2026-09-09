@@ -24,14 +24,20 @@ def get_flickr8k_dataset_paths():
     return path, path_audio
 
 def get_audio_length(df):
+    from pathlib import Path
+    df = df.copy()
+    wave_dir = Path(get_flickr8k_dataset_paths()[1]) / "flickr_audio/flickr_audio/wavs"
+
     for audio_file in df["audio"].unique():
-            audio_path = os.path.join(get_flickr8k_dataset_paths()[1], "flickr_audio/flickr_audio/wavs", audio_file)
+            audio_path = wave_dir / audio_file
+
             if os.path.exists(audio_path):
                 with wave.open(str(audio_path), "rb") as wav_file:
                     num_frames = wav_file.getnframes()
                     sample_rate = wav_file.getframerate() # all 16kHz
+
                     length_in_seconds = num_frames / sample_rate
-                    df["audio_length"] = length_in_seconds
+                    df.loc[df["audio"] == audio_file, "audio_length"] = length_in_seconds
             else:
                 print(f"Warning: {audio_file} not found in the dataset.")
     return df
@@ -46,22 +52,58 @@ def remove_outliers(df, lower_quantile=0.01, upper_quantile=0.99):
     df["caption_length"] = df["caption"].apply(lambda x: len(x.split()))
     df = get_audio_length(df)
 
+
     lower_bound_text = df["caption_length"].quantile(lower_quantile)
     upper_bound_text = df["caption_length"].quantile(upper_quantile)
+
     lower_bound_audio = df["audio_length"].quantile(lower_quantile)
     upper_bound_audio = df["audio_length"].quantile(upper_quantile)
 
-    lower_bound_speaker = df.groupby("speaker").size().quantile(0.1)
-    upper_bound_speaker = df.groupby("speaker").size().quantile(0.9)
+    if lower_bound_audio == upper_bound_audio:
+        print("Warning: Audio length lower and upper bounds are equal. Adjusting bounds.")
+        lower_bound_audio = df["audio_length"].min()
+        upper_bound_audio = df["audio_length"].max()
+
+    print(f"Audio length bounds: {lower_bound_audio:.2f} - {upper_bound_audio:.2f} seconds")
+
+    print(f"Number of images removed due to outlier audio {len(df.loc[(df['audio_length'] < lower_bound_audio) | (df['audio_length'] > upper_bound_audio), 'image'].unique())}")
     
-    filtered_df = df[(df["caption_length"] >= lower_bound_text) & (df["caption_length"] <= upper_bound_text) & 
-                     (df["audio_length"] >= lower_bound_audio) & (df["audio_length"] <= upper_bound_audio) &
-                     (df.groupby("speaker").size() >= lower_bound_speaker) & (df.groupby("speaker").size() <= upper_bound_speaker)]
+    outlier_mask = (
+        (df["caption_length"] < lower_bound_text)
+        | (df["caption_length"] > upper_bound_text)
+        | (df["audio_length"] < lower_bound_audio)
+        | (df["audio_length"] > upper_bound_audio)
+    )
+
+    images_to_remove = df.loc[outlier_mask, "image"].unique()
+
+    filtered_df = (
+        df[~df["image"].isin(images_to_remove)]
+        .reset_index(drop=True)
+    )
+
+    print(f"Len of filtered df: {len(filtered_df)}")
+    print(f"Divisible by 5: {len(filtered_df) % 5 == 0}")
     
     return filtered_df
 
+def clamp_tensor_outliers(features, q, exact=False):
+    """
+    Clamp the outliers form the tensors according to aristotelian & platonic paper
+    """
+    if q == 1:
+        return features
+    if exact: # every scalar
+        q_val = features.reshape(-1).abs().sort().values[int(q * features.numel())]
+    else: # mean
+        q_val = torch.quantile(features.abs().flatten(start_dim=1), q, dim=1).mean()
+    return features.clamp(-q_val, q_val)
+
 def build_flikr8k_text_audio_image():
-    
+    if os.path.exists(df_path):
+        print(f"Dataset already exists at {df_path}. Loading existing dataset.")
+        all_df = pd.read_csv(df_path)
+        return all_df
     # Get the paths to the Flickr8k dataset files
     path, path_audio = get_flickr8k_dataset_paths()
 
@@ -168,7 +210,7 @@ def load_embeddings(model_name, modality, chunk_num=0):
 
     return data
 
-def load_all_chunks(model_name, modality, num_chunks, caption_number=0):
+def load_all_chunks(model_name, modality, num_chunks, caption_number=0, clip=False, exact=False, q=0.9):
     '''
     Load all chunks of embeddings for a given model and modality, and return a concatenated tensor of the embeddings.
     If modality is "text" or "speech", it will select every 5th embedding starting from the specified caption_number.
@@ -199,9 +241,11 @@ def load_all_chunks(model_name, modality, num_chunks, caption_number=0):
                     f"for {model_name}: {feats.shape}"
                 )
             caption_feats = feats[caption_number::5]
+            if clip: caption_feats = clamp_tensor_outliers(caption_feats, q=q, exact=exact)
             chunks.append(caption_feats)
             del caption_feats, data
         else:
+            if clip: data["avg"] = clamp_tensor_outliers(data["avg"], q=q, exact=exact)
             chunks.append(data["avg"])
             del data
 
@@ -215,8 +259,33 @@ def print_meta_info(model_name, modality, chunk_number):
     print("Avg dtype:", data["avg"].dtype)
 
 def normalize_speakers(df, index):
-    #XXX TODO
-    return None
+    embeddings = df["avg"]
+
+    normalized_embeddings = embeddings.clone()  # Create a copy of the embeddings to normalize
+    speaker_means = {}
+    centralized_means = {}
+
+    for speaker in index['speaker'].unique():
+        speaker_indices = index[index['speaker'] == speaker].index
+
+        speaker_embeddings = embeddings[speaker_indices] # all embeddings for this speaker
+
+        for layer in range(speaker_embeddings.shape[1]):
+
+            # mean embeddings for the speaker for this layer
+            mean_layer_embedding = torch.mean(speaker_embeddings[:, layer, :], dim=0)
+            speaker_means[(speaker, layer)] = mean_layer_embedding
+            
+
+            # subtract the mean layer embeddings from all the embeddings for this speaker for this layer
+            speaker_embeddings[:, layer, :] -= mean_layer_embedding
+            centralized_means[(speaker, layer)] = torch.mean(speaker_embeddings[:, layer, :], dim=0)
+
+        normalized_embeddings[speaker_indices] = speaker_embeddings
+        df["avg"] = normalized_embeddings  # Update the DataFrame with normalized embeddings
+
+    print(f"Normalized embeddings for {len(index['speaker'].unique())} speakers.")
+    return df, speaker_means, centralized_means
 
 def save_dataset_index(df, modality):
     if f"{EMB_DIR}/{modality}" not in os.listdir(EMB_DIR):
@@ -280,6 +349,8 @@ def get_captions_from_index(modality):
     )
 
     return mapped_df # returns: embedding_index, image, caption_number, caption
+
+
 
 if __name__ == "__main__":
     all_df = build_flikr8k_text_audio_image()

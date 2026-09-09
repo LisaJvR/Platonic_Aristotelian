@@ -57,7 +57,7 @@ MODELSETS = {
         ],
 
         "speech": [
-            "facebook/wav2vec2-base",#self-supervised
+            "facebook/wav2vec2-base", #self-supervised
             "facebook/wav2vec2-large",
             "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
             "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
@@ -139,22 +139,22 @@ MODELSETS = {
         ],
         "speech": [
             "facebook/wav2vec2-base",#self-supervised
-            "facebook/wav2vec2-large",
+            # "facebook/wav2vec2-large",
             # "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
             # "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
 
-            "facebook/wav2vec2-xls-r-300m", # cross lingual (larger pretrained dataset), not fine tuned, just checkpoints
-            "facebook/wav2vec2-xls-r-1b",
+            # "facebook/wav2vec2-xls-r-300m", # cross lingual (larger pretrained dataset), not fine tuned, just checkpoints
+            # "facebook/wav2vec2-xls-r-1b",
 
             "facebook/hubert-base-ls960",
-            "facebook/hubert-large-ll60k",
+            # "facebook/hubert-large-ll60k",
             # "facebook/hubert-xlarge-ll60k",
 
             "facebook/data2vec-audio-base",
             # "facebook/data2vec-audio-large",
 
             "microsoft/wavlm-base",
-            "microsoft/wavlm-base-plus",
+            # "microsoft/wavlm-base-plus",
             # "microsoft/wavlm-large",
 
             # "microsoft/unispeech-sat-base", # double check
@@ -191,7 +191,7 @@ def pretty_model_name(model_name: str) -> str:
         size = size.group(1) if size else ""
 
         if "_ft_in12k" in name:
-            return size + " (CLIP, fine-tuned on ImageNet-12k)"
+            return size + "(ft)"
 
         return size
 
@@ -298,6 +298,16 @@ def get_size(model_name):
             return "giant"
 
         return "base"
+
+def get_family_name(modality, model_name):
+        if modality == "text":
+            return text_family(model_name)
+        elif modality == "image":
+            return image_family(model_name)
+        elif modality == "speech":
+            return speech_family(model_name)
+        else:
+            return ""
 
 def text_family(model_name):
         name = model_name.lower()

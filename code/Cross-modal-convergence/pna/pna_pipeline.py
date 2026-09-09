@@ -5,7 +5,7 @@ from tqdm import tqdm, trange
 import torch
 import gc
 import torchvision
-from transformers import AutoModel, AutoTokenizer, AutoImageProcessor, ViTImageProcessor, ViTModel, AutoProcessor, AutoFeatureExtractor
+from transformers import AutoModel, AutoTokenizer, AutoFeatureExtractor
 import os
 from pna_data import build_flikr8k_text_audio_image, get_image_files, get_audio_files, EMB_DIR, OFF_LOAD_FOLDER_COLAB, OFF_LOAD_FOLDER_LOCAL
 from pna_models import get_models
@@ -17,7 +17,8 @@ import librosa
 import os
 import shutil
 
-data_length = 4000
+data_length = 40000
+samples_per_chunk = 800*5
 
 def delete_hf_cached_model(model_name):
     cache_root = os.path.expanduser("/root/.cache/huggingface/hub/")
@@ -114,7 +115,8 @@ def extract_speech(text_data, model_name,modality, device, batch_size, cuda=True
 
     tok, model, dtype = load_speech_model(model_name, cuda=cuda) # returns eval model
     length = len(audio_paths)
-    chunk_size = max(1, data_length // batch_size)
+    chunk_samples_count = 0
+    samples_per_chunk = 800*5
     chunk_feats = []
     c_index = 0
 
@@ -149,9 +151,11 @@ def extract_speech(text_data, model_name,modality, device, batch_size, cuda=True
                 gc.collect()
                 return None
             chunk_feats.append(feats_avg.cpu())
+            chunk_samples_count += feats_avg.shape[0]
+
             del inputs, feats_avg
 
-            if len(chunk_feats) == chunk_size:
+            if chunk_samples_count == samples_per_chunk:
                 chunk_tensor = torch.cat(chunk_feats, dim=0)
                 save_to_dir(avg_features=chunk_tensor, meta_data={
                     "model_name": model_name,
@@ -163,6 +167,7 @@ def extract_speech(text_data, model_name,modality, device, batch_size, cuda=True
                 c_index += 1
                 del chunk_feats, chunk_tensor
                 chunk_feats = []
+                chunk_samples_count = 0
 
                 if test == True: break
             
@@ -256,7 +261,9 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
 
     vision_model = create_feature_extractor(vision_model, return_nodes=return_nodes)
 
-    chunk_size = max(1, (data_length // 5) // batch_size) # int division
+    # chunk_size = max(1, (data_length // 5) // batch_size) # int division
+    samples_per_chunk = 800
+    chunk_samples_count = 0
 
     chunk_feats = []
     c_index = 0
@@ -275,9 +282,10 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
             features = torch.stack(cls_layers).permute(1, 0, 2) # B, L, D
 
             chunk_feats.append(features.cpu())
+            chunk_samples_count += features.shape[0]
             del outputs, features, inputs
 
-            if len(chunk_feats) == chunk_size:
+            if chunk_samples_count == samples_per_chunk:
                 chunk_tensor = torch.cat(chunk_feats, dim=0)
                 save_to_dir(avg_features=chunk_tensor, meta_data={
                     "model_name": model_name,
@@ -290,6 +298,7 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
                 c_index +=1
                 del chunk_feats, chunk_tensor
                 chunk_feats = []
+                chunk_samples_count = 0
 
                 if test == True: break 
 
@@ -312,7 +321,6 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
     return None
 
 def run_extraction(model_names, df,modality, batch_size=1, test=False):
-    save_dataset_index(df, modality=modality)
 
     for model_name in model_names:
         print(f"\n Extracting features for model: {model_name}")
@@ -411,9 +419,11 @@ def extract_text(text_data, model_name,modality, device, batch_size,test, max_le
     num_params = sum(p.numel() for p in model.parameters())
     device = next(model.parameters()).device #XXX redundant, but ensures model and tokens are on same device
 
-    chunk_size = max(1, data_length // batch_size)
+    # chunk_size = max(1, data_length // batch_size)
+    samples_per_chunk = 800*5
 
     chunk_feats = []
+    chunk_samples_count = 0
     c_index = 0
 
     for i in tqdm(range(0, length, batch_size), desc=f"Extracting {model_name}", unit="batch"):
@@ -433,9 +443,12 @@ def extract_text(text_data, model_name,modality, device, batch_size,test, max_le
                 return None
 
             chunk_feats.append(feats_avg.cpu())
+            chunk_samples_count += feats_avg.shape[0]
+
             del outputs, feats, feats_avg, batch, mask
 
-            if len(chunk_feats) == chunk_size:
+            if chunk_samples_count == samples_per_chunk:
+
                 chunk_tensor = torch.cat(chunk_feats, dim=0)
 
                 save_to_dir(avg_features=chunk_tensor, meta_data={
@@ -449,6 +462,7 @@ def extract_text(text_data, model_name,modality, device, batch_size,test, max_le
                 c_index +=1
                 del chunk_feats, chunk_tensor
                 chunk_feats = []
+                chunk_samples_count = 0
 
                 if test == True: break 
 
