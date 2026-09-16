@@ -25,6 +25,15 @@ METRICS = {
         },
         "higher_is_better": True,
     },
+    
+    "cka_linear_biased": {
+        "fn": compute_cka,
+        "kwargs": {
+            "kernel": "linear",
+            "unbiased": False,
+        },
+        "higher_is_better": True,
+    },
 
     "cka_rbf_unbiased": {
         "fn": compute_cka,

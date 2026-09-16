@@ -1,7 +1,10 @@
 import torch
 import numpy as np
 from calibrated_similarity import calibrate, calibrate_layers
-import CCA
+import faiss
+# import CCA
+_FAISS_RESOURCES = None
+from tqdm import tqdm
 
 def hsic_biased(A, B):
     n = A.shape[0]
@@ -28,33 +31,53 @@ def hsic_unbiased(A, B):
     HSIC_value /= m * (m - 3)
     return HSIC_value
 
-def hsic(A, B, unbiased=False):
-    if unbiased:
-        return hsic_unbiased(A, B)
-    else:
-       return hsic_biased(A, B)
+def compute_biased_linear_cka(feats_A, feats_B):
+    '''
+    Compute in kernel space
+    '''
+    X = feats_A - feats_A.mean(dim=0, keepdim=True)
+    Y = feats_B - feats_B.mean(dim=0, keepdim=True)
 
-def compute_cka(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=False):
+    XTX = X.T @ X
+    YTY = Y.T @ Y
+
+    denominator = (
+            torch.norm(XTX) *
+            torch.norm(YTY)
+            + 1e-12
+        )
+
+    YTX = Y.T @ X
+
+    numerator = torch.norm(YTX) ** 2
+
+    cka_value = numerator / denominator
+
+    return cka_value.item()
+
+def compute_cka_kernel(feats, kernel="linear", rbf_sigma=1.0, unbiased=False):
+    if kernel == "linear":
+        kernel_matrix = torch.mm(feats, feats.T)
+    elif kernel == "rbf":
+        kernel_matrix = torch.exp(-torch.cdist(feats, feats) ** 2 / (2 * rbf_sigma ** 2))
+
+    return kernel_matrix
+
+
+def compute_cka(kernel_A, kernel_B, kernel="linear", rbf_sigma=1.0, unbiased=False):
     '''
     From: Adapted from Koepke, https://github.com/minyoungg/platonic-rep/blob/main/metrics.py#L111
     '''
-    feats_A = feats_A.to(torch.float64)
-    feats_B = feats_B.to(torch.float64)
+    if unbiased: hsic_fn = hsic_unbiased
+    else: hsic_fn = hsic_biased
 
-    if kernel == "linear":
-        kernel_A = torch.mm(feats_A, feats_A.T)
-        kernel_B = torch.mm(feats_B, feats_B.T)
+    H_AA = hsic_fn(kernel_A, kernel_A)
+    H_BB = hsic_fn(kernel_B, kernel_B)
+    H_AB = hsic_fn(kernel_A, kernel_B)
 
-    elif kernel == "rbf":
-        kernel_A = torch.exp(-torch.cdist(feats_A, feats_A) ** 2 / (2 * rbf_sigma ** 2))
-        kernel_B = torch.exp(-torch.cdist(feats_B, feats_B) ** 2 / (2 * rbf_sigma ** 2))
-
-    H_AA = hsic(kernel_A, kernel_A, unbiased=unbiased)
-    H_BB = hsic(kernel_B, kernel_B, unbiased=unbiased)
-    H_AB = hsic(kernel_A, kernel_B, unbiased=unbiased)
+    del kernel_A, kernel_B
 
     cka_value = H_AB / (torch.sqrt(H_AA * H_BB) + 1e-6)  
-    # cka_value = H_AB / (torch.sqrt(H_AA * H_BB))  
     return cka_value.item()
 
 
@@ -107,18 +130,26 @@ def compute_cknna(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=Fal
 def mutual_knn(knn_A, knn_B):
     '''
     mKNN(l,l) = 1/N sum_i^N (|KNN_A(i,l) intersect KNN_B(i,l)| / k)
+    Calculate the mutual knn between 2 sets embeddings (each from 1 layer)
+    knn_A and knn_B : [N, k]
     '''
     assert knn_A.shape == knn_B.shape
-    k = knn_A.shape[1]
-    matches = knn_A.unsqueeze(2) == knn_B.unsqueeze(1)
+    k = knn_A.shape[1] # number of neighbors
+
+    matches = knn_A.unsqueeze(2) == knn_B.unsqueeze(1) # [N, k, k] boolean tensor indicating matches
     overlap = matches.any(dim=2).sum(dim=1)
     per_sample_score = overlap.float() / k
 
     return per_sample_score.mean().item()
 
-def compute_mutual_knn(feats_A, feats_B, topk):
-    knn_A = knn_layers(feats_A.unsqueeze(1), topk)[:, 0, :]  # [N, k]
-    knn_B = knn_layers(feats_B.unsqueeze(1), topk)[:, 0, :]  # [N, k]
+def compute_mutual_knn(layer_feats_A, layer_feats_B, topk):
+    '''
+    layer_feats_A and layer_feats_B : [N, 1, D]
+    Must recieve one pair or layers to compare.
+    '''
+    
+    knn_A = knn_layer(layer_feats_A, topk) #[N, k]
+    knn_B = knn_layer(layer_feats_B, topk) #[N, k]
 
     return mutual_knn(knn_A, knn_B)
 
@@ -166,65 +197,94 @@ def compute_pwcca(X,Y):
     return None
 
 
-
 # --------------------------------------------
 
 def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
+    '''
+    feats_A and feats_B : [N, L, D]
+    '''
     n_layers_A = feats_A.shape[1]
     n_layers_B = feats_B.shape[1]
 
-    scores = torch.empty(n_layers_A,n_layers_B,dtype=torch.float32,)
+    device = feats_A.device
 
-    for i in range(n_layers_A):
-        X = feats_A[:, i, :]
-        for j in range(n_layers_B):
-            Y = feats_B[:, j, :]
-            scores[i, j] = metric_fn(X,Y,**metric_kwargs,)
+    scores = torch.empty(n_layers_A,n_layers_B,dtype=torch.float32,device=device)
+
+    if metric_fn == compute_cka:
+
+        Y_kernels = []
+        
+        for i in tqdm(range(n_layers_A), desc=f"Computing CKA scores {n_layers_A} layers A vs {n_layers_B} layers B"):
+            X = feats_A[:, i, :] 
+            # compute kernel
+            X_ker = compute_cka_kernel(X, **metric_kwargs)
+
+            for j in range(n_layers_B):
+                if len(Y_kernels) > j:
+                    Y_ker = Y_kernels[j]
+                else:
+                    Y = feats_B[:, j, :]
+                    # compute Y kernel
+                    Y_ker = compute_cka_kernel(Y, **metric_kwargs)
+                    Y_kernels.append(Y_ker.cpu())
+
+                scores[i, j] = metric_fn(X_ker,Y_ker,**metric_kwargs,)
+    else:
+        for i in tqdm(range(n_layers_A), desc=f"Computing: {metric_fn.__name__} scores {n_layers_A} layers A vs {n_layers_B} layers B"):
+            X = feats_A[:, i, :] 
+            for j in range(n_layers_B):
+                Y = feats_B[:, j, :]
+                scores[i, j] = metric_fn(X,Y,**metric_kwargs,)
 
     return scores
 
-# TODO: improve this code: --------------------------------
+def get_faiss_resources():
+    global _FAISS_RESOURCES
 
-def knn_layers(embeddings, k):
+    if _FAISS_RESOURCES is None:
+        _FAISS_RESOURCES = faiss.StandardGpuResources()
+
+    return _FAISS_RESOURCES
+
+def knn_layer(layer_embeddings, k):
+    '''
+    Computes the nearest neigbors of each sample in the embeddigns for 1 layer
+    Embeddings shape: [N, D]
+    '''
     if torch.cuda.is_available(): use_gpu = True
     else: use_gpu = False
 
-    # sklearn needs CPU NumPy arrays
-    if isinstance(embeddings, torch.Tensor):
-        embeddings = embeddings.detach().float().cpu().numpy()
+    n_samples, dim = layer_embeddings.shape
 
-    embeddings = np.ascontiguousarray(embeddings, dtype=np.float32)
+    if use_gpu: 
+        resources = get_faiss_resources()
 
-    n_samples, n_layers, dim = embeddings.shape
+    if use_gpu :
+        layer_embeddings = (layer_embeddings
+            .detach().float().cpu().numpy())
 
-    all_indices = torch.empty(
-        (n_samples, n_layers, k),
-        dtype=torch.long,
-    )
-    for layer in range(n_layers):
-        layer_embeddings = embeddings[:, layer, :].copy()
+        layer_embeddings = np.ascontiguousarray(
+            layer_embeddings,
+            dtype=np.float32
+        )
 
-        # XXX
-        if use_gpu :
-            import faiss
-            if faiss.get_num_gpus() > 0:
-                faiss.normalize_L2(layer_embeddings)
-                index = faiss.IndexFlatL2(dim)
-                
-                resources = faiss.StandardGpuResources()
-                index = faiss.index_cpu_to_gpu(resources,0,index,) #move to GPU
-                index.add(layer_embeddings)
-                _, indices = index.search(layer_embeddings, k + 1)
-        else: 
+        if faiss.get_num_gpus() > 0:
+            faiss.normalize_L2(layer_embeddings)
+            index = faiss.GpuIndexFlatL2(resources, dim, )
+            index.add(layer_embeddings)
+            _, indices = index.search(layer_embeddings, k + 1)
+    else: 
             """ Pure AI implementation for CPU (no faiss) """
             from sklearn.neighbors import NearestNeighbors
             from sklearn.preprocessing import normalize
 
-            layer_embeddings = normalize(
-                layer_embeddings,
-                norm="l2",
-                axis=1
-            )
+             # sklearn needs CPU NumPy arrays
+            if isinstance(layer_embeddings, torch.Tensor):
+                layer_embeddings = layer_embeddings.detach().float().cpu().numpy()
+            layer_embeddings = np.ascontiguousarray(layer_embeddings, dtype=np.float32)
+
+            layer_embeddings = normalize(layer_embeddings,
+                norm="l2",axis=1)
 
             if k >= n_samples:# XXX
                 k = n_samples - 1
@@ -235,13 +295,20 @@ def knn_layers(embeddings, k):
 
             _, indices = index.kneighbors(layer_embeddings)
 
-        clean_indices = np.empty((n_samples, k), dtype=np.int64)
-        for i in range(n_samples):
-            neighbours = indices[i][indices[i] != i]
-            clean_indices[i] = neighbours[:k]
+    clean_indices = np.empty((n_samples, k), dtype=np.int64)
+    for i in range(n_samples):
+        neighbours = indices[i][indices[i] != i]
+        clean_indices[i] = neighbours[:k]
 
-        all_indices[:, layer, :] = torch.from_numpy(clean_indices.copy())
+    return torch.from_numpy(clean_indices.copy()) # shape: [N, k]
 
-    return all_indices
+def compute_mknn_caption_density(layer_feats_A, layer_feats_B, topk):
+    '''Must recieve all ca'''
+    
+    knn_A = knn_layer(layer_feats_A, topk) #[N, k]
+    knn_B = knn_layer(layer_feats_B, topk) #[N, k]
+
+    return mutual_knn(knn_A, knn_B)
+    
 
 

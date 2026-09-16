@@ -56,7 +56,7 @@ def save_to_dir(avg_features,meta_data, batch_num=None):
 
     if batch_num is not None:
         torch.save(output,os.path.join(dir_path, f"features_{batch_num}.pt"))
-        print(f"Saved features to: {dir_path}/features_{batch_num}.pt")
+        # print(f"Saved features to: {dir_path}/features_{batch_num}.pt")
     else:
         torch.save(output,os.path.join(dir_path, "features_all.pt"))
         print(f"Saved features to: {dir_path}/features_all.pt")
@@ -154,7 +154,7 @@ def extract_speech(text_data, model_name,modality, device, batch_size, cuda=True
             chunk_feats.append(feats_avg.cpu())
             chunk_samples_count += feats_avg.shape[0]
 
-            del inputs, feats_avg
+            del inputs, feats_avg, feats
 
             if chunk_samples_count == samples_per_chunk:
                 chunk_tensor = torch.cat(chunk_feats, dim=0)
@@ -173,6 +173,7 @@ def extract_speech(text_data, model_name,modality, device, batch_size, cuda=True
                 if test == True: break
             
     if len(chunk_feats) > 0:
+        print(f"Number of chunks: {c_index + 1}")
         chunk_tensor = torch.cat(chunk_feats, dim=0)
         save_to_dir(avg_features=chunk_tensor, meta_data={
                 "model_name": model_name,
@@ -304,8 +305,9 @@ def extract_image(df, model_name, device, batch_size, cuda=True, test=False):
                 if test == True: break 
 
     if len(chunk_feats) > 0:
-            chunk_tensor = torch.cat(chunk_feats, dim=0)
-            save_to_dir(avg_features=chunk_tensor, meta_data={
+        print(f"Number of chunks: {c_index + 1}")
+        chunk_tensor = torch.cat(chunk_feats, dim=0)
+        save_to_dir(avg_features=chunk_tensor, meta_data={
                 "model_name": model_name,
                 "modality": "image",
                 "num_params": num_params,
@@ -410,6 +412,7 @@ def extract_text(text_data, model_name,modality, device, batch_size,test, max_le
     caption = text_data["caption"].tolist()
     tok, model = load_text_model(model_name, cuda=cuda) # returns eval model
     length = len(caption)
+    print(f"Extracting features for {length} texts with batch size {batch_size} and max_length {max_length}.")
 
     # tokenize all the texts at once
     tokenized = tok(
@@ -469,6 +472,7 @@ def extract_text(text_data, model_name,modality, device, batch_size,test, max_le
                 if test == True: break 
 
     if len(chunk_feats) > 0:
+        print(f"Number of chunks: {c_index + 1}")
         chunk_tensor = torch.cat(chunk_feats, dim=0)
         save_to_dir(avg_features=chunk_tensor, meta_data={
             "model_name": model_name,

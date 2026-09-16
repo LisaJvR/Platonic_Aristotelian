@@ -69,7 +69,6 @@ def belongs_to_family(image_model, family, modalities):
 
 
 def plot_results(results, c_results, type, modalities, file_name):
-    # TODO: implement calibrated line plotting?
     os.makedirs("../plots", exist_ok=True)
 
     plt.rcParams.update({
@@ -278,7 +277,7 @@ def plot_results(results, c_results, type, modalities, file_name):
 
         desired_order.append("observed = {:.4f}x ".format(coeff[0][0]))
 
-        # NEW Calibrated ------------------------- XXX check if correct
+        # NEW Calibrated ------------------------- 
 
         legend_handles = [unique[s] for s in desired_order]
         legend_labels = desired_order.copy()

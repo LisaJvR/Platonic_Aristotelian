@@ -112,7 +112,7 @@ data ={
                             }
                         },
                     
-                        "dinov2": {
+            "dinov2": {
                             "small": {
                                 "bloom560m": 0.090,
                                 "bloom1.1b": 0.100,
@@ -174,7 +174,7 @@ data ={
                             }
                         },
                     
-                        "clip": {
+            "clip": {
                             "base": {
                                 "bloom560m": 0.118,
                                 "bloom1.1b": 0.128,
@@ -221,7 +221,7 @@ data ={
                             }
                         },
                     
-                        "clip (12K ft)": {
+            "clip (12K ft)": {
                             "base": {
                                 "bloom560m": 0.098,
                                 "bloom1.1b": 0.102,
@@ -541,15 +541,30 @@ data ={
 def get_platonic_trend(x, type= "Platonic", metric="mknn_k10"):
     all_coeffs = {}
     avg_family_coeffs = {}
+
     for family in data[type][metric]:
         for image_model in data[type][metric][family]:
-            # print(f"Calculating coefficients for {family} and {image_model}")
+            
             y = np.array(list(data[type][metric][family][image_model].values()))
-            # x = np.array(list(data[type][metric][family][image_model].keys())).reshape(-1, 1)
-            y = y[:len(x)]
-            # print(f"x: {x}, y: {y}")
+            print(
+                f"{family} | {image_model}: "
+                f"x={len(x)}, y={len(y)}"
+            )
+
+            if len(x) != len(y):
+                print(
+                    f"Warning: Length mismatch for {family} | {image_model}: "
+                    f"x has length {len(x)}, y has length {len(y)}. "
+                    "Truncating to the shorter length."
+                )
+                # continue
+            if len(x) < len(y):
+                y = y[:len(x)]
+            else:
+                x = x[:len(y)]
+
             coeff = LinearRegression().fit(x.reshape(-1, 1), y.reshape(-1, 1)).coef_[0]
-            # print(coeff[0])
+
             all_coeffs[(family, image_model)] = coeff[0]
 
         avg_family_coeff = np.mean([all_coeffs[(family, image_model)] for image_model in data[type][metric][family]])

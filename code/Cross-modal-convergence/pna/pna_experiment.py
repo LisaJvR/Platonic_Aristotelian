@@ -1,7 +1,7 @@
 import torch
 from pna_models import get_models
 from pna_data import load_all_chunks
-from pna_metrics import  knn_layers, compare_layers, compute_cka
+from pna_metrics import  knn_layer, compare_layers, compute_cka
 from pna_plotting_code import  plot_results, get_reg_coeffs
 import os
 from tqdm import tqdm
@@ -45,6 +45,27 @@ def save_result(file_path, result):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
     file_exists = os.path.exists(file_path)
+    # check to see if the result already exists in the file and overwrite it if it does
+    if file_exists:
+        rows = load_results(file_path)
+        for i, row in enumerate(rows):
+            if (
+                row["model_a"] == result["model_a"]
+                and row["model_b"] == result["model_b"]
+                and row["metric"] == result["metric"]
+            ):
+                rows[i] = {
+                    key: result.get(key)
+                    for key in RESULT_COLUMNS
+                }
+                with open(file_path, "w", newline="") as f:
+                    writer = csv.DictWriter(
+                        f,
+                        fieldnames=RESULT_COLUMNS,
+                    )
+                    writer.writeheader()
+                    writer.writerows(rows)
+                return
 
     with open(file_path, "a", newline="") as f:
         writer = csv.DictWriter(
@@ -93,7 +114,6 @@ def result_exists(
 
 
 def load_aligned_features(model,modality, n_sets,num_chunks,clip=False,exact=False,q=0.9,):
-
     return [
         load_all_chunks(
             model,
@@ -108,7 +128,7 @@ def load_aligned_features(model,modality, n_sets,num_chunks,clip=False,exact=Fal
     ] # XXX could be an issue
 
 def compute_raw_scores(feats_A, feats_B_list, metric_fn, metric_kwargs):
-    # matrix of scores
+
     matrices = [
         compare_layers(
             feats_A,
@@ -116,14 +136,10 @@ def compute_raw_scores(feats_A, feats_B_list, metric_fn, metric_kwargs):
             metric_fn,
             metric_kwargs,
         )
-        for feats_B in feats_B_list
+        for feats_B in tqdm(feats_B_list, desc="Comparing layers", leave=False)
     ]
 
-    # [n_sets, L_A, L_B] 
     matrices = torch.stack(matrices)
-
-    # image-text: mean of 5
-    # speech-text: mean of 1
     mean_matrix = matrices.mean(dim=0)
 
     return mean_matrix
@@ -151,20 +167,10 @@ def compute_calibrated_score(
     ]
 
     def similarity(X, Y):
-        return metric_fn(
-            X,
-            Y,
-            **metric_kwargs,
-        )
+        return metric_fn(X,Y, **metric_kwargs,)
 
     def aggregate(S):
-
-        S = S.reshape(
-            n_layers_A,
-            n_sets,
-            n_layers_B,
-        )
-
+        S = S.reshape(n_layers_A,n_sets,n_layers_B,)
         # Same aggregation as raw experiment
         S = S.mean(dim=1)
 
@@ -187,7 +193,6 @@ def evaluate_pair(
     calibrate=False,
     calibration_K=200,
 ):
-    # new calculate score code
 
     metric_fn = metric_config["fn"]
     kwargs = metric_config["kwargs"]
@@ -199,10 +204,6 @@ def evaluate_pair(
         kwargs,
     )
 
-    # XXX issue 
-    # raw_score: model_name, model_name, max_score
-    # layer_scores: model_name, model_name, [L_A, L_B]
-    
     result = {
         "raw_score": layer_scores.max().item(),
         "layer_scores": layer_scores,
@@ -218,9 +219,6 @@ def evaluate_pair(
             K=calibration_K,
         )
 
-        # XXX issue
-        # raw_score: model_name, model_name, max_score
-        # layer_scores: model_name, model_name, [L_A, L_B]
         result.update({
             "calibrated_score": calibrated.item(),
             "p_value": p.item(),
@@ -234,6 +232,148 @@ def evaluate_pair(
         })
 
     return result
+
+def interleave_images(feats_A, num_captions=5):
+    '''
+    feats_A: [N, L, D]
+    num_captions: number of captions per image
+    '''
+    n_samples, n_layers, n_dim = feats_A.shape
+
+    if n_samples % num_captions != 0:
+        raise ValueError(f"Number of samples {n_samples} is not divisible by number of captions {num_captions}")
+
+    n_images = n_samples // num_captions
+
+    interleaved_feats = torch.empty(
+        (n_images, n_layers, n_dim),
+        dtype=feats_A.dtype,
+        device=feats_A.device,
+    )
+
+    for i in range(n_images):
+        interleaved_feats[i] = feats_A[i*num_captions:(i+1)*num_captions].mean(dim=0)
+
+    return interleaved_feats
+
+def interleave_catopns(feats_B_list):
+    feats_B = torch.stack(feats_B_list, dim=1)
+    N, C, L, D = feats_B.shape
+    feats_B = feats_B.reshape(N * C, L, D)
+    return feats_B
+
+
+def run_caption_density_experiment(
+    experiment_name,
+    metric_name,
+    EXPERIMENTS,
+    results_file,
+    model_set="all",
+    num_chunks=10,
+    clip=False,
+    exact=False,
+    q=0.9,
+    calibrate=False,
+    calibration_K=200,
+    caption_density=5,
+):
+    experiment = EXPERIMENTS[experiment_name]
+    metric_config = METRICS[metric_name]
+
+    modality_a, modality_b = experiment["modalities"]
+    n_sets = experiment["n_sets"]
+
+    models_A = get_models(model_set, modality_a)
+    models_B = get_models(model_set, modality_b)
+
+    if not (experiment_name == "image_text" or experiment_name == "image_speech"):
+        print(f"Skipping {experiment_name} for caption density experiment (not supported)")
+        return
+
+    existing_results = load_results(results_file)
+
+    for model_A in tqdm(
+        models_A,
+        desc=f"{metric_name}: {modality_a}",
+    ):
+
+        # Load A once because it is reused against every B model.
+        feats_A = load_all_chunks(
+            model_A,
+            modality_a,
+            num_chunks=num_chunks,
+            clip=clip,
+            exact=exact,
+            q=q,
+        )
+
+        # interleave images for 5 captions
+        feats_A = interleave_images(feats_A, caption_density=5)
+
+        if feats_A is None:
+            print(f"Missing embeddings: {model_A}")
+            continue
+
+        for model_B in models_B:
+
+            if result_exists(
+                existing_results,
+                model_A,
+                model_B,
+                metric_name,
+                require_calibrated=calibrate,
+            ):
+                print(
+                    f"Skipping {model_A} vs {model_B} for {metric_name} "
+                    f"(already exists in results file)"
+                )
+                continue
+
+            # load all chunks (for this experiment)
+            feats_B_list = load_aligned_features(
+                model=model_B,
+                modality=modality_b,
+                n_sets=caption_density,
+                num_chunks=num_chunks,
+                clip=clip,
+                exact=exact,
+                q=q,
+            )
+
+            # interleave images for 5 captions
+            feats_B_list = interleave_catopns(feats_B_list)
+
+            if any(feats is None for feats in feats_B_list):
+                print(f"Missing embeddings: {model_B}")
+                continue
+
+            scores = evaluate_pair(
+                feats_A,
+                feats_B_list,
+                metric_config,
+                calibrate=calibrate,
+                calibration_K=calibration_K,
+            )
+
+            result = {
+                "modality_a": modality_a,
+                "modality_b": modality_b,
+                "model_a": model_A,
+                "model_b": model_B,
+                "metric": metric_name,
+                "raw_score": scores["raw_score"],
+                "calibrated_score": scores["calibrated_score"],
+                "p_value": scores["p_value"],
+                "threshold": scores["threshold"],
+            }
+
+            save_result(
+                results_file,
+                result,
+            )
+
+            existing_results.append(result)
+
 
 def run_experiment(
     experiment_name,
@@ -253,6 +393,7 @@ def run_experiment(
     metric_config = METRICS[metric_name]
 
     modality_a, modality_b = experiment["modalities"]
+
     n_sets = experiment["n_sets"]
 
     models_A = get_models(model_set, modality_a)
@@ -288,6 +429,10 @@ def run_experiment(
                 metric_name,
                 require_calibrated=calibrate,
             ):
+                print(
+                    f"Skipping {model_A} vs {model_B} for {metric_name} "
+                    f"(already exists in results file)"
+                )
                 continue
 
             # load all chunks
@@ -356,19 +501,35 @@ def experiment_driver(
 
             print(f"  Metric: {metric_name}")
 
-            run_experiment(
-                experiment_name=experiment_name,
-                EXPERIMENTS=EXPERIMENTS,
-                results_file=results_file,
-                metric_name=metric_name,
-                model_set=model_set,
-                num_chunks=num_chunks,
-                clip=clip,
-                exact=exact,
-                q=q,
-                calibrate=calibrate,
-                calibration_K=calibration_K,
-            )
+            if experiment_name in ("caption_density_it", "caption_density_is"):
+                results_file = results_file.replace(".csv", f"__{experiment_name}.csv")
+                run_caption_density_experiment(
+                    experiment_name=experiment_name,
+                    EXPERIMENTS=EXPERIMENTS,
+                    results_file=results_file,
+                    metric_name=metric_name,
+                    model_set=model_set,
+                    num_chunks=num_chunks,
+                    clip=clip,
+                    exact=exact,
+                    q=q,
+                    calibrate=calibrate,
+                    calibration_K=calibration_K,
+                )
+            else:
+                run_experiment(
+                    experiment_name=experiment_name,
+                    EXPERIMENTS=EXPERIMENTS,
+                    results_file=results_file,
+                    metric_name=metric_name,
+                    model_set=model_set,
+                    num_chunks=num_chunks,
+                    clip=clip,
+                    exact=exact,
+                    q=q,
+                    calibrate=calibrate,
+                    calibration_K=calibration_K,
+                )
 
             # Plot after the metric has finished.
             if plot:
@@ -485,52 +646,98 @@ if __name__ == "__main__":
     EXPERIMENTS = {
     "image_text": {
         "modalities": ("image", "text"),
+        "n_sets": 1,
+        "metrics": [
+            "mknn_k10",
+            # "cka_linear_unbiased",
+        ],
+    },
+    "caption_density_it": {
+        "modalities": ("image", "text"),
+        "n_sets": 1,
+        "metrics": [
+            "mknn_k10",
+        ]
+    },
+    "caption_density_it": {
+        "modalities": ("image", "text"),
         "n_sets": 5,
         "metrics": [
             "mknn_k10",
-            "cka_linear_unbiased",
-        ],
+        ]
     },
-
+    "caption_density_is": {
+        "modalities": ("image", "speech"),
+        "n_sets": 1,
+        "metrics": [
+            "mknn_k10",
+        ]
+    },
+     "caption_density_is": {
+        "modalities": ("image", "speech"),
+        "n_sets": 5,
+        "metrics": [
+            "mknn_k10",
+        ]
+    },
     "speech_text": {
         "modalities": ("speech", "text"),
         "n_sets": 1,
         "metrics": [
             "mknn_k10",
-            "cka_linear_unbiased",
+            # "cka_linear_unbiased",
         ],
     },
 
     "image_speech": {
         "modalities": ("image", "speech"),
-        "n_sets": 5,
+        "n_sets": 1,
         "metrics": [
             "mknn_k10",
-            "cka_linear_unbiased",
+            # "cka_linear_unbiased",
         ],
     },
 }
     # data lenth // samples in a chunk
     #  number_of_chunks = 34380 // 4000
-    number_of_chunks =1
+    number_of_chunks = 9
 
     results_files = "../results/metrics"
+    os.mkdir("../results/") if not os.path.exists("../results/") else None
     os.mkdir(results_files) if not os.path.exists("../results/metrics") else None
     
     experiment_driver(
         experiment_names=[
             "image_text",
-            # "speech_text",
-            # "speech_image",
+            "speech_text",
+            "image_speech",
         ],
         EXPERIMENTS=EXPERIMENTS,
         model_set="test",
         num_chunks= number_of_chunks,
-        clip=False,
+        clip=True,
+        exact=False,
+        q=0.9,
+        calibrate=False,
+        calibration_K=200,# XXX 200
+        plot=True,
+        results_file=f"{results_files}/results.csv",
+    )
+
+    experiment_driver(
+        experiment_names=[
+            "image_text",
+            "speech_text",
+            "image_speech",
+        ],
+        EXPERIMENTS=EXPERIMENTS,
+        model_set="test",
+        num_chunks= number_of_chunks,
+        clip=True,
         exact=False,
         q=0.9,
         calibrate=True,
-        calibration_K=10,# XXX 200
+        calibration_K=200,# XXX 200
         plot=True,
         results_file=f"{results_files}/results.csv",
     )

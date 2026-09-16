@@ -11,9 +11,10 @@ path_audio = kagglehub.dataset_download("warcoder/flickr-8k-audio-caption-corpus
 token_text_path = kagglehub.dataset_download("sealeopard/flickr8k-token-txt")
 
 df_path = "../../data/flickr8k_audio_text_image.csv"
+clean_df_path = "../../data/flickr8k_audio_text_image_cleaned.csv"
 
-EMB_DIR = "../embeddings" # "/mnt/external/lisa/embeddings"
-OFF_LOAD_FOLDER_COLAB = "../../bin/offload" #XXX colab: "/content/offload"
+EMB_DIR = "/mnt/external/lisa/embeddings"
+OFF_LOAD_FOLDER_COLAB = "../../bin/offload" #XXX change for other system
 OFF_LOAD_FOLDER_LOCAL = "../../bin/offload"
 
 print("Path to image files:", path)
@@ -87,7 +88,7 @@ def remove_outliers(df, lower_quantile=0.01, upper_quantile=0.99):
     
     return filtered_df
 
-def clamp_tensor_outliers(features, q, exact=False):
+def clamp_tensor_outliers(features, q, exact=False):#XXX
     """
     Clamp the outliers form the tensors according to aristotelian & platonic paper
     """
@@ -100,9 +101,16 @@ def clamp_tensor_outliers(features, q, exact=False):
     return features.clamp(-q_val, q_val)
 
 def build_flikr8k_text_audio_image():
-    if os.path.exists(df_path):
-        print(f"Dataset already exists at {df_path}. Loading existing dataset.")
-        all_df = pd.read_csv(df_path)
+    if os.path.exists(clean_df_path):
+        print(f"Dataset already exists at {clean_df_path}. Loading existing dataset.")
+        all_df = pd.read_csv(clean_df_path)
+
+        for modality in ["text", "image", "speech"]:
+            if f"{EMB_DIR}/{modality}/dataset_index.csv" not in os.listdir(f"{EMB_DIR}/{modality}"):
+                print(f"Dataset index for {modality} not found. Saving dataset index files.")
+                save_dataset_index(all_df, modality)
+            else:
+                print(f"Dataset index for {modality} found.")
         return all_df
     # Get the paths to the Flickr8k dataset files
     path, path_audio = get_flickr8k_dataset_paths()
@@ -148,22 +156,18 @@ def build_flikr8k_text_audio_image():
     # sort by image and caption_number
     all_df = all_df.sort_values(by=["image", "caption_number"]).reset_index(drop=True)
 
-    # view data
-    print("Shape of merged dataframe:", all_df.shape)
-    print("Columns in merged dataframe:", all_df.columns.tolist()) 
-    print(all_df.head())
-
     # check for directory else create it
     os.makedirs(os.path.dirname(df_path), exist_ok=True)
     all_df.to_csv(df_path, index=False)
 
     all_df = remove_outliers(all_df, lower_quantile=0.01, upper_quantile=0.99)
-    print("Shape of cleaned dataframe:", all_df.shape)
-    print(all_df.head())
 
     save_dataset_index(all_df, "text")
     save_dataset_index(all_df, "image")
     save_dataset_index(all_df, "speech")
+
+    all_df.to_csv(clean_df_path, index=False)
+    print(f"Saved cleaned dataset to: {clean_df_path}")
 
     return all_df
 
@@ -228,6 +232,7 @@ def load_all_chunks(model_name, modality, num_chunks, caption_number=0, clip=Fal
             raise ValueError(
                 f"Missing {modality} chunk {chunk_num} "
                 f"for {model_name}"
+                f" at {EMB_DIR}/{modality}/{model_name}/features_{chunk_num}.pt"
             )
 
         if modality == "text" or modality == "speech":
@@ -306,6 +311,8 @@ def save_dataset_index(df, modality):
             index=False
         )
         print(f"Saved text dataset index to: {EMB_DIR}/text/dataset_index.csv")
+        print(f"Columns in index_df: {index_df.columns.tolist()}")
+        print(f"Length of index_df: {len(index_df)}")
 
     elif modality == "image":
         index_df = (
@@ -337,7 +344,7 @@ def save_dataset_index(df, modality):
 def get_captions_from_index(modality):
     
     index_df = pd.read_csv(f"{EMB_DIR}/{modality}/dataset_index.csv")
-    dataset = pd.read_csv("../../data/flickr8k_audio_text_image.csv")
+    dataset = pd.read_csv(clean_df_path)
 
     index_df = index_df.reset_index(names="embedding_index")
 

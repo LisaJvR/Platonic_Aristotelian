@@ -97,18 +97,20 @@ MODELSETS = {
 
             "openlm-research/open_llama_3b", #done
             "openlm-research/open_llama_7b",
-            # "openlm-research/open_llama_13b",# skipped
+            "openlm-research/open_llama_13b",# skipped
             
-            # "huggyllama/llama-7b",
-            # "huggyllama/llama-13b",# skipped
+            "huggyllama/llama-7b",
+            "huggyllama/llama-13b",# skipped
+            # "huggyllama/llama-30b",# P
+            # "huggyllama/llama-65b", # P 
             
             # Platonic 
-            # "google/gemma-2b",
-            # "google/gemma-7b",# P
-            # "mistralai/Mistral-7B-v0.1",# P
-            # "mistralai/Mixtral-8x7B-v0.1",# skipped
-            # "allenai/OLMo-1B-hf",# P
-            # "allenai/OLMo-7B-hf",# P
+            "google/gemma-2b",
+            "google/gemma-7b",# P
+            "mistralai/Mistral-7B-v0.1",# P
+            "mistralai/Mixtral-8x7B-v0.1",# skipped
+            "allenai/OLMo-1B-hf",# P
+            "allenai/OLMo-7B-hf",# P
     
             # "NousResearch/Meta-Llama-3-8B",##         
             # "facebook/data2vec-text-base", # have data2vec audio later
@@ -126,40 +128,54 @@ MODELSETS = {
             "vit_small_patch14_dinov2.lvd142m",
             "vit_base_patch14_dinov2.lvd142m",
             "vit_large_patch14_dinov2.lvd142m",
-            # "vit_giant_patch14_dinov2.lvd142m",
+            "vit_giant_patch14_dinov2.lvd142m",
             
             "vit_base_patch16_clip_224.laion2b",
-            # "vit_large_patch14_clip_224.laion2b",
-            # "vit_huge_patch14_clip_224.laion2b",
+            "vit_large_patch14_clip_224.laion2b",
+            "vit_huge_patch14_clip_224.laion2b",
 
             "vit_base_patch16_clip_224.laion2b_ft_in12k",
-            # "vit_large_patch14_clip_224.laion2b_ft_in12k",
-            # "vit_huge_patch14_clip_224.laion2b_ft_in12k",
+            "vit_large_patch14_clip_224.laion2b_ft_in12k",
+            "vit_huge_patch14_clip_224.laion2b_ft_in12k",
 
         ],
         "speech": [
             "facebook/wav2vec2-base",#self-supervised
-            # "facebook/wav2vec2-large",
-            # "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
-            # "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
+            "facebook/wav2vec2-large",
+            "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
+            "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
 
-            # "facebook/wav2vec2-xls-r-300m", # cross lingual (larger pretrained dataset), not fine tuned, just checkpoints
-            # "facebook/wav2vec2-xls-r-1b",
+            "facebook/wav2vec2-xls-r-300m", # cross lingual (larger pretrained dataset), not fine tuned, just checkpoints
+            "facebook/wav2vec2-xls-r-1b",
 
             "facebook/hubert-base-ls960",
-            # "facebook/hubert-large-ll60k",
-            # "facebook/hubert-xlarge-ll60k",
+            "facebook/hubert-large-ll60k",
+            "facebook/hubert-xlarge-ll60k",
 
             "facebook/data2vec-audio-base",
-            # "facebook/data2vec-audio-large",
+            "facebook/data2vec-audio-large",
 
             "microsoft/wavlm-base",
-            # "microsoft/wavlm-base-plus",
-            # "microsoft/wavlm-large",
+            "microsoft/wavlm-base-plus",
+            "microsoft/wavlm-large",
 
             # "microsoft/unispeech-sat-base", # double check
             # "microsoft/unispeech-sat-large", #double check
         ],
+    },
+     "sanity_checks":{
+        "text": [
+            "openlm-research/open_llama_3b",
+            "openlm-research/open_llama_13b",
+        ],
+        "image": [
+            "vit_base_patch14_dinov2.lvd142m",
+            "vit_large_patch14_dinov2.lvd142m",
+        ],
+        "speech": [
+            "facebook/hubert-base-ls960",
+            "facebook/hubert-large-ll60k",
+        ]
     }
 }
 
