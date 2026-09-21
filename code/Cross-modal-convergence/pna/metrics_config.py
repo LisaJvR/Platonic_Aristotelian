@@ -45,6 +45,16 @@ METRICS = {
         "higher_is_better": True,
     },
 
+       "cka_rbf_biased": {
+        "fn": compute_cka,
+        "kwargs": {
+            "kernel": "rbf",
+            "rbf_sigma": 1.0,
+            "unbiased": False,
+        },
+        "higher_is_better": True,
+    },
+
     "rsa": {
         "fn": compute_rsa,
         "kwargs": {},

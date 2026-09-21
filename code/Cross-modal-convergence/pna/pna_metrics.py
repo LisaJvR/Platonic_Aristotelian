@@ -7,9 +7,16 @@ _FAISS_RESOURCES = None
 from tqdm import tqdm
 
 def hsic_biased(A, B):
-    n = A.shape[0]
-    H = torch.eye(n, dtype=A.dtype, device=A.device) - 1 / n
-    return torch.trace(A @ H @ B @ H)
+    """
+    Adapted to skip calculating H
+    """
+    A_centered = (
+        A
+        - A.mean(dim=0, keepdim=True)
+        - A.mean(dim=1, keepdim=True)
+        + A.mean()
+    )
+    return torch.sum(A_centered * B)
 
 def hsic_unbiased(A, B):
     '''
@@ -25,7 +32,8 @@ def hsic_unbiased(A, B):
     HSIC_value = (
         (torch.sum(A_tilde * B_tilde.T))
         + (torch.sum(A_tilde) * torch.sum(B_tilde) / ((m - 1) * (m - 2)))
-        - (2 * torch.sum(torch.mm(A_tilde, B_tilde)) / (m - 2))
+        # - (2 * torch.sum(torch.mm(A_tilde, B_tilde)) / (m - 2)) #XXX might be slower
+        - (2 * torch.dot(A_tilde.sum(dim=0), B_tilde.sum(dim=1)) / (m - 2))
         )
     
     HSIC_value /= m * (m - 3)
@@ -79,7 +87,6 @@ def compute_cka(kernel_A, kernel_B, kernel="linear", rbf_sigma=1.0, unbiased=Fal
 
     cka_value = H_AB / (torch.sqrt(H_AA * H_BB) + 1e-6)  
     return cka_value.item()
-
 
 
 def compute_cknna(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=False, topk=10, distance_agnostic=False):
@@ -211,9 +218,9 @@ def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
     scores = torch.empty(n_layers_A,n_layers_B,dtype=torch.float32,device=device)
 
     if metric_fn == compute_cka:
-
+        # if metric_kwargs.get("unbiased", False):
+            # compute all cka simultaneously in kernel space
         Y_kernels = []
-        
         for i in tqdm(range(n_layers_A), desc=f"Computing CKA scores {n_layers_A} layers A vs {n_layers_B} layers B"):
             X = feats_A[:, i, :] 
             # compute kernel

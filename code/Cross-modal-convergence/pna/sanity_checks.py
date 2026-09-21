@@ -268,149 +268,7 @@ def compute_speaker_knn(indices, index):
 
     return layer_scores
 
-def compare_clipped_to_non_clipped():
-    from pna_experiment import experiment_driver, run_experiment
-
-    print("Running experiments for clipped and non-clipped embeddings...")
-    run_experiment(
-        ["vit_base_patch16_224.mae"],
-        ["bert-base-uncased"],
-        modalities=["image", "text"],
-        num_chunks=10,
-        file_path="../results/cka_image_text_not_clipped.csv",
-        type="cka",
-        cka_type="linear",
-        rbf_sigma=1.0,
-        biased=False,
-        clip=False,
-        exact=False,
-        q=0.9
-    )
-
-    print("Running experiments for clipped embeddings...")
-    run_experiment(
-        ["vit_base_patch16_224.mae"],
-        ["bert-base-uncased"],
-        modalities=["image", "text"],
-        num_chunks=10,
-        file_path="../results/cka_image_text_clipped.csv",
-        type="cka",
-        cka_type="linear",
-        rbf_sigma=1.0,
-        biased=False,
-        clip=True,
-        exact=False,
-        q=0.9
-    )
-
-    print("Running experiments for mknn with clipped embeddings...")
-    run_experiment(
-        ["vit_base_patch16_224.mae"],
-        ["bert-base-uncased"],
-        modalities=["image", "text"],
-        num_chunks=10,
-        file_path="../results/mknn_image_text_clipped.csv",
-        type="mknn",
-        rbf_sigma=1.0,
-        biased=False,
-        clip=True,
-        exact=False,
-        q=0.9
-    )
-
-    print("Running experiments for mknn with non-clipped embeddings...")
-    run_experiment(
-        ["vit_base_patch16_224.mae"],
-        ["bert-base-uncased"],
-        modalities=["image", "text"],
-        num_chunks=10,
-        file_path="../results/mknn_image_text_not_clipped.csv",
-        type="mknn",
-        rbf_sigma=1.0,
-        biased=False,
-        clip=False,
-        exact=False,
-        q=0.9
-    )
-
-    # read the results and compare
-    cka_clipped = pd.read_csv("../results/cka_image_text_clipped.csv")
-    cka_not_clipped = pd.read_csv("../results/cka_image_text_not_clipped.csv")
-    mknn_clipped = pd.read_csv("../results/mknn_image_text_clipped.csv")
-    mknn_not_clipped = pd.read_csv("../results/mknn_image_text_not_clipped.csv")
-
-    print("CKA results comparison:")
-    print(cka_clipped)
-    print(cka_not_clipped) 
-    print("Difference in CKA results (clipped - not clipped):")
-    print(cka_clipped.sub(cka_not_clipped))
-
-    print("MKNN results comparison:")
-    print(mknn_clipped)
-    print(mknn_not_clipped)
-    print("Difference in MKNN results (clipped - not clipped):")
-    print(mknn_clipped.sub(mknn_not_clipped))
-
-    return None
-
-if __name__ == "__main__":
-    # clipped and not clipped.
-    # compare_clipped_to_non_clipped()
-    build_flikr8k_text_audio_image()  # Ensure the dataset is built before loading data
-
-    os.makedirs(PLOTS_DIR, exist_ok=True)
-    modalities = ["text", "speech"]
-    chunk_numbers = np.arange(0,1)
-    clip =True
-    
-    for modality in modalities:
-        for model_name in get_models(modality=modality, modelset="sanity_checks"):
-            mapped_df = None
-            # save KNN image
-            if modality in ["speech", "text"]:
-                plt.figure(figsize=(10, 6))
-                plt.title(f'KNN Performance per Layer for {model_name} Chunk {chunk_numbers}')
-
-                for chunk_number in chunk_numbers:
-                    data, mapped_df = get_data(model_name, modality, chunk_number=chunk_number, clip=clip)
-                    check_for_nans(data["avg"].cpu().numpy())
-                    norm_layer_scores = None
-                    if modality == "speech":
-                    
-                        print(f"Normalize speakers...")
-                        norm_data, speaker_means, centralized_means = normalize_speakers(data, mapped_df)
-
-                        plot_speaker_mean_embeddings(speaker_means, model_name, type="speaker_means")
-                        plot_speaker_mean_embeddings(centralized_means, model_name, type="centralized_means")
-                        _, norm_indices, model_chunk_avg_norm = compute_knn_caption(df=norm_data, index=mapped_df, k=4, modality=modality)
-                        plt.plot(range(norm_indices.shape[1]), model_chunk_avg_norm, marker='x',label=f'Normalized Same Caption', color="#56B4E9")
-                        
-                        # You can pass a DataFrame if you have one, or keep it None to use the default loading mechanism
-                        print(f"Model chunk average: {np.mean(model_chunk_avg_norm):.4f}")
-
-                        norm_layer_scores = compute_speaker_knn(norm_indices, mapped_df)
-                        plt.plot(range(norm_indices.shape[1]), norm_layer_scores, marker='^', label=f'Same Speaker KNN normalized ({np.mean(norm_layer_scores):.4f})', color="#D55E00")
-                        
-                    _, indices, model_chunk_avg = compute_knn_caption(df=data, index=mapped_df, k=4, modality=modality)
-                    layer_scores = compute_speaker_knn(indices, mapped_df)
-                    for layer, score in enumerate(layer_scores):
-                        if norm_layer_scores is not None:
-                            print(f"Layer {layer}: same-speaker KNN = {score:.4f}, centralized = {norm_layer_scores[layer]:.4f}")
-                    print(f"Model chunk average: {np.mean(model_chunk_avg):.4f}")
-
-                    plt.plot(range(indices.shape[1]), model_chunk_avg, marker='o', label=f'Same Caption KNN ({np.mean(model_chunk_avg):.4f})', color="#0072B2")
-                    plt.plot(range(indices.shape[1]), layer_scores, marker='^', label=f'Same Speaker KNN ({np.mean(layer_scores):.4f})', color="#E69F00")
-                    
-                    plt.xticks(range(indices.shape[1]))
-
-                plt.legend()
-                plt.xlabel('Layer')
-                plt.ylabel('Fraction of Same-Image Neighbours')
-                plt.grid()
-                plt.savefig(f"{PLOTS_DIR}performance_layer_model_chunk_{modality}_{model_name.replace('/', '_')}_{chunk_numbers[0]}_{chunk_numbers[-1]}{'' if not clip else '_clipped'}.png")
-                print(f"Saved KNN performance plot for {modality} model {model_name} for chunks {chunk_numbers[0]} to {chunk_numbers[-1]}.")
-            
-            if modality == "image":
+def plot_image_knn_accuracy(model_name, modality):
                 import matplotlib.pyplot as plt
                 import matplotlib.patches as patches
 
@@ -595,4 +453,149 @@ if __name__ == "__main__":
                 print(f"Saved nearest-neighbour retrieval plot for {modality} model {model_name} for chunk {chunk_number}.")
 
                 plt.close(fig)
+
+def compare_clipped_to_non_clipped():
+    from pna_experiment import experiment_driver, run_experiment
+
+    print("Running experiments for clipped and non-clipped embeddings...")
+    run_experiment(
+        ["vit_base_patch16_224.mae"],
+        ["bert-base-uncased"],
+        modalities=["image", "text"],
+        num_chunks=10,
+        file_path="../results/cka_image_text_not_clipped.csv",
+        type="cka",
+        cka_type="linear",
+        rbf_sigma=1.0,
+        biased=False,
+        clip=False,
+        exact=False,
+        q=0.9
+    )
+
+    print("Running experiments for clipped embeddings...")
+    run_experiment(
+        ["vit_base_patch16_224.mae"],
+        ["bert-base-uncased"],
+        modalities=["image", "text"],
+        num_chunks=10,
+        file_path="../results/cka_image_text_clipped.csv",
+        type="cka",
+        cka_type="linear",
+        rbf_sigma=1.0,
+        biased=False,
+        clip=True,
+        exact=False,
+        q=0.9
+    )
+
+    print("Running experiments for mknn with clipped embeddings...")
+    run_experiment(
+        ["vit_base_patch16_224.mae"],
+        ["bert-base-uncased"],
+        modalities=["image", "text"],
+        num_chunks=10,
+        file_path="../results/mknn_image_text_clipped.csv",
+        type="mknn",
+        rbf_sigma=1.0,
+        biased=False,
+        clip=True,
+        exact=False,
+        q=0.9
+    )
+
+    print("Running experiments for mknn with non-clipped embeddings...")
+    run_experiment(
+        ["vit_base_patch16_224.mae"],
+        ["bert-base-uncased"],
+        modalities=["image", "text"],
+        num_chunks=10,
+        file_path="../results/mknn_image_text_not_clipped.csv",
+        type="mknn",
+        rbf_sigma=1.0,
+        biased=False,
+        clip=False,
+        exact=False,
+        q=0.9
+    )
+
+    # read the results and compare
+    cka_clipped = pd.read_csv("../results/cka_image_text_clipped.csv")
+    cka_not_clipped = pd.read_csv("../results/cka_image_text_not_clipped.csv")
+    mknn_clipped = pd.read_csv("../results/mknn_image_text_clipped.csv")
+    mknn_not_clipped = pd.read_csv("../results/mknn_image_text_not_clipped.csv")
+
+    print("CKA results comparison:")
+    print(cka_clipped)
+    print(cka_not_clipped) 
+    print("Difference in CKA results (clipped - not clipped):")
+    print(cka_clipped.sub(cka_not_clipped))
+
+    print("MKNN results comparison:")
+    print(mknn_clipped)
+    print(mknn_not_clipped)
+    print("Difference in MKNN results (clipped - not clipped):")
+    print(mknn_clipped.sub(mknn_not_clipped))
+
+    return None
+
+if __name__ == "__main__":
+    # clipped and not clipped.
+    # compare_clipped_to_non_clipped()
+    build_flikr8k_text_audio_image()  # Ensure the dataset is built before loading data
+
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    modalities = ["text", "speech"]
+    chunk_numbers = np.arange(0,1)
+    clip =True
+    
+    for modality in modalities:
+        for model_name in get_models(modality=modality, modelset="sanity_checks"):
+            mapped_df = None
+            # save KNN image
+            if modality in ["speech", "text"]:
+                plt.figure(figsize=(10, 6))
+                plt.title(f'KNN Performance per Layer for {model_name} Chunk {chunk_numbers}')
+
+                for chunk_number in chunk_numbers:
+                    data, mapped_df = get_data(model_name, modality, chunk_number=chunk_number, clip=clip)
+                    check_for_nans(data["avg"].cpu().numpy())
+                    norm_layer_scores = None
+                    if modality == "speech":
+                    
+                        print(f"Normalize speakers...")
+                        norm_data, speaker_means, centralized_means = normalize_speakers(data, mapped_df)
+
+                        plot_speaker_mean_embeddings(speaker_means, model_name, type="speaker_means")
+                        plot_speaker_mean_embeddings(centralized_means, model_name, type="centralized_means")
+                        _, norm_indices, model_chunk_avg_norm = compute_knn_caption(df=norm_data, index=mapped_df, k=4, modality=modality)
+                        plt.plot(range(norm_indices.shape[1]), model_chunk_avg_norm, marker='x',label=f'Normalized Same Caption', color="#56B4E9")
+                        
+                        # You can pass a DataFrame if you have one, or keep it None to use the default loading mechanism
+                        print(f"Model chunk average: {np.mean(model_chunk_avg_norm):.4f}")
+
+                        norm_layer_scores = compute_speaker_knn(norm_indices, mapped_df)
+                        plt.plot(range(norm_indices.shape[1]), norm_layer_scores, marker='^', label=f'Same Speaker KNN normalized ({np.mean(norm_layer_scores):.4f})', color="#D55E00")
+                        
+                    _, indices, model_chunk_avg = compute_knn_caption(df=data, index=mapped_df, k=4, modality=modality)
+                    layer_scores = compute_speaker_knn(indices, mapped_df)
+                    for layer, score in enumerate(layer_scores):
+                        if norm_layer_scores is not None:
+                            print(f"Layer {layer}: same-speaker KNN = {score:.4f}, centralized = {norm_layer_scores[layer]:.4f}")
+                    print(f"Model chunk average: {np.mean(model_chunk_avg):.4f}")
+
+                    plt.plot(range(indices.shape[1]), model_chunk_avg, marker='o', label=f'Same Caption KNN ({np.mean(model_chunk_avg):.4f})', color="#0072B2")
+                    plt.plot(range(indices.shape[1]), layer_scores, marker='^', label=f'Same Speaker KNN ({np.mean(layer_scores):.4f})', color="#E69F00")
+                    
+                    plt.xticks(range(indices.shape[1]))
+
+                plt.legend()
+                plt.xlabel('Layer')
+                plt.ylabel('Fraction of Same-Image Neighbours')
+                plt.grid()
+                plt.savefig(f"{PLOTS_DIR}performance_layer_model_chunk_{modality}_{model_name.replace('/', '_')}_{chunk_numbers[0]}_{chunk_numbers[-1]}{'' if not clip else '_clipped'}.png")
+                print(f"Saved KNN performance plot for {modality} model {model_name} for chunks {chunk_numbers[0]} to {chunk_numbers[-1]}.")
+            
+            if modality == "image":
+                plot_image_knn_accuracy(model_name, modality)
 

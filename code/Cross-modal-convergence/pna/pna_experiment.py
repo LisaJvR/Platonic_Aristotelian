@@ -9,6 +9,7 @@ from calibrated_similarity import calibrate, calibrate_layers
 from metrics_config import METRICS
 import csv
 import os
+import sys
 
 
 RESULT_COLUMNS = [
@@ -155,16 +156,7 @@ def compute_calibrated_score(
     n_layers_B = feats_B_list[0].shape[1]
     n_sets = len(feats_B_list)
 
-    X_layers = [
-        feats_A[:, i, :]
-        for i in range(n_layers_A)
-    ]
 
-    Y_layers = [
-        feats_B[:, j, :]
-        for feats_B in feats_B_list
-        for j in range(n_layers_B)
-    ]
 
     def similarity(X, Y):
         return metric_fn(X,Y, **metric_kwargs,)
@@ -176,8 +168,37 @@ def compute_calibrated_score(
 
         return S.max()
     
-    print(f"Calibrating with K={K}...")
+    print(f"Calibrating with K={K} for {metric_fn.__name__} with kwargs {metric_kwargs}")
+    if metric_fn == compute_cka: # cka takes kernels as input
+        X_layers = [
+                compute_cka_kernel(
+                    feats_A[:, i, :],
+                    **metric_kwargs
+                )
+                for i in range(n_layers_A)
+            ]
 
+        Y_layers = [
+                compute_cka_kernel(
+                    feats_B[:, j, :],
+                    **metric_kwargs
+                )
+                for feats_B in feats_B_list
+                for j in range(n_layers_B)
+            ]
+    else:
+        X_layers = [
+        feats_A[:, i, :]
+        for i in range(n_layers_A)
+        ]
+
+        Y_layers = [
+            feats_B[:, j, :]
+            for feats_B in feats_B_list
+            for j in range(n_layers_B)
+        ]
+
+    # calibrate layers
     return calibrate_layers(
         X_layers,
         Y_layers,
@@ -190,24 +211,32 @@ def evaluate_pair(
     feats_A,
     feats_B_list,
     metric_config,
+    non_calibrated=False,
     calibrate=False,
     calibration_K=200,
+    existing_results=None,
 ):
 
     metric_fn = metric_config["fn"]
     kwargs = metric_config["kwargs"]
 
-    layer_scores = compute_raw_scores(
-        feats_A,
-        feats_B_list,
-        metric_fn,
-        kwargs,
-    )
+    if existing_results is None:
+        layer_scores = compute_raw_scores(
+            feats_A,
+            feats_B_list,
+            metric_fn,
+            kwargs,
+        )
 
-    result = {
-        "raw_score": layer_scores.max().item(),
-        "layer_scores": layer_scores,
-    }
+        result = {
+            "raw_score": layer_scores.max().item(),
+            "layer_scores": layer_scores,
+        }
+    else:
+        result = {
+            "raw_score": float(existing_results["raw_score"]),
+            "layer_scores": None,
+        }
 
     if calibrate:
 
@@ -240,10 +269,10 @@ def interleave_images(feats_A, num_captions=5):
     '''
     n_samples, n_layers, n_dim = feats_A.shape
 
-    if n_samples % num_captions != 0:
-        raise ValueError(f"Number of samples {n_samples} is not divisible by number of captions {num_captions}")
+    # if n_samples % num_captions != 0:
+    #     raise ValueError(f"Number of samples {n_samples} is not divisible by number of captions {num_captions}")
 
-    n_images = n_samples // num_captions
+    n_images = n_samples * num_captions
 
     interleaved_feats = torch.empty(
         (n_images, n_layers, n_dim),
@@ -256,11 +285,11 @@ def interleave_images(feats_A, num_captions=5):
 
     return interleaved_feats
 
-def interleave_catopns(feats_B_list):
+def interleave_captions(feats_B_list):
     feats_B = torch.stack(feats_B_list, dim=1)
     N, C, L, D = feats_B.shape
     feats_B = feats_B.reshape(N * C, L, D)
-    return feats_B
+    return [feats_B]
 
 
 def run_caption_density_experiment(
@@ -286,7 +315,7 @@ def run_caption_density_experiment(
     models_A = get_models(model_set, modality_a)
     models_B = get_models(model_set, modality_b)
 
-    if not (experiment_name == "image_text" or experiment_name == "image_speech"):
+    if not (experiment_name == "caption_density_it" or experiment_name == "caption_density_is"):
         print(f"Skipping {experiment_name} for caption density experiment (not supported)")
         return
 
@@ -307,8 +336,8 @@ def run_caption_density_experiment(
             q=q,
         )
 
-        # interleave images for 5 captions
-        feats_A = interleave_images(feats_A, caption_density=5)
+
+        feats_A = interleave_images(feats_A, num_captions=5)
 
         if feats_A is None:
             print(f"Missing embeddings: {model_A}")
@@ -323,10 +352,10 @@ def run_caption_density_experiment(
                 metric_name,
                 require_calibrated=calibrate,
             ):
-                print(
-                    f"Skipping {model_A} vs {model_B} for {metric_name} "
-                    f"(already exists in results file)"
-                )
+                # print(
+                #     f"Skipping {model_A} vs {model_B} for {metric_name} "
+                #     f"(already exists in results file)"
+                # )
                 continue
 
             # load all chunks (for this experiment)
@@ -341,18 +370,32 @@ def run_caption_density_experiment(
             )
 
             # interleave images for 5 captions
-            feats_B_list = interleave_catopns(feats_B_list)
-
+            feats_B_list = interleave_captions(feats_B_list)
+            
             if any(feats is None for feats in feats_B_list):
                 print(f"Missing embeddings: {model_B}")
                 continue
 
+            matching_result = next(
+                (
+                    row for row in existing_results
+                    if row["modality_a"] == modality_a
+                    and row["modality_b"] == modality_b
+                    and row["model_a"] == model_A
+                    and row["model_b"] == model_B
+                    and row["metric"] == metric_name
+                ),
+                None,
+            )
+
+            # print(f"Shape of feats_A: {feats_A.shape}, feats_B_list: {feats_B_list.shape}")
             scores = evaluate_pair(
                 feats_A,
                 feats_B_list,
                 metric_config,
                 calibrate=calibrate,
                 calibration_K=calibration_K,
+                existing_results=matching_result
             )
 
             result = {
@@ -430,8 +473,7 @@ def run_experiment(
                 require_calibrated=calibrate,
             ):
                 print(
-                    f"Skipping {model_A} vs {model_B} for {metric_name} "
-                    f"(already exists in results file)"
+                    f"Skipping {model_A} vs {model_B} for {metric_name} (cal:{calibrate}) "
                 )
                 continue
 
@@ -450,12 +492,24 @@ def run_experiment(
                 print(f"Missing embeddings: {model_B}")
                 continue
 
+            matching_result = next(
+                (
+                    row for row in existing_results
+                    if row["modality_a"] == modality_a
+                    and row["modality_b"] == modality_b
+                    and row["model_a"] == model_A
+                    and row["model_b"] == model_B
+                    and row["metric"] == metric_name
+                ),
+                None,
+            )
             scores = evaluate_pair(
                 feats_A,
                 feats_B_list,
                 metric_config,
                 calibrate=calibrate,
                 calibration_K=calibration_K,
+                existing_results=matching_result
             )
 
             result = {
@@ -495,6 +549,10 @@ def experiment_driver(
 
         experiment = EXPERIMENTS[experiment_name]
 
+        if experiment_name in ("caption_density_it", "caption_density_is"):
+            new_results_file = results_file.replace(".csv", f"__caption_density.csv")
+            print(f"\nExperiment: {experiment_name} (caption density) - results will be saved to {new_results_file}")
+
         print(f"\nExperiment: {experiment_name}")
 
         for metric_name in experiment["metrics"]:
@@ -502,11 +560,10 @@ def experiment_driver(
             print(f"  Metric: {metric_name}")
 
             if experiment_name in ("caption_density_it", "caption_density_is"):
-                results_file = results_file.replace(".csv", f"__{experiment_name}.csv")
                 run_caption_density_experiment(
                     experiment_name=experiment_name,
                     EXPERIMENTS=EXPERIMENTS,
-                    results_file=results_file,
+                    results_file=new_results_file,
                     metric_name=metric_name,
                     model_set=model_set,
                     num_chunks=num_chunks,
@@ -644,74 +701,105 @@ def results_to_dict(
 
 if __name__ == "__main__":
     EXPERIMENTS = {
-    "image_text": {
-        "modalities": ("image", "text"),
-        "n_sets": 1,
-        "metrics": [
-            "mknn_k10",
-            # "cka_linear_unbiased",
-        ],
-    },
-    "caption_density_it": {
-        "modalities": ("image", "text"),
-        "n_sets": 1,
-        "metrics": [
-            "mknn_k10",
-        ]
-    },
-    "caption_density_it": {
-        "modalities": ("image", "text"),
-        "n_sets": 5,
-        "metrics": [
-            "mknn_k10",
-        ]
-    },
-    "caption_density_is": {
-        "modalities": ("image", "speech"),
-        "n_sets": 1,
-        "metrics": [
-            "mknn_k10",
-        ]
-    },
-     "caption_density_is": {
-        "modalities": ("image", "speech"),
-        "n_sets": 5,
-        "metrics": [
-            "mknn_k10",
-        ]
-    },
-    "speech_text": {
-        "modalities": ("speech", "text"),
-        "n_sets": 1,
-        "metrics": [
-            "mknn_k10",
-            # "cka_linear_unbiased",
-        ],
-    },
+        "image_text": {
+            "modalities": ("image", "text"),
+            "n_sets": 1,
+            "metrics": [
+                "mknn_k10",
+                "cka_linear_biased",
+                "cka_rbf_biased",
+                "cka_linear_unbiased",
+                "cka_rbf_unbiased"
+            ],
+        },
+      
+        "speech_text": {
+            "modalities": ("speech", "text"),
+            "n_sets": 1,
+            "metrics": [
+                "mknn_k10",
+                "cka_linear_biased",
+                "cka_rbf_biased",
+                "cka_linear_unbiased",
+                "cka_rbf_unbiased"
+            ],
+        },
 
-    "image_speech": {
-        "modalities": ("image", "speech"),
-        "n_sets": 1,
-        "metrics": [
-            "mknn_k10",
-            # "cka_linear_unbiased",
-        ],
-    },
-}
-    # data lenth // samples in a chunk
-    #  number_of_chunks = 34380 // 4000
+        "image_speech": {
+            "modalities": ("image", "speech"),
+            "n_sets": 1,
+            "metrics": [
+                "mknn_k10",
+                "cka_linear_biased",
+                "cka_rbf_biased",
+                "cka_linear_unbiased",
+                "cka_rbf_unbiased"
+            ],
+        },
+
+        "caption_density_it": {
+            "modalities": ("image", "text"),
+            "n_sets": 5,
+            "metrics": [
+                "mknn_k10",
+                "cka_linear_unbiased",
+                "cka_rbf_unbiased"
+            ]
+        },
+
+        "caption_density_is": {
+            "modalities": ("image", "speech"),
+            "n_sets": 5,
+            "metrics": [
+                "mknn_k10",
+                "cka_linear_unbiased",
+                "cka_rbf_unbiased"
+            ]
+        },
+    }
+
     number_of_chunks = 9
+    plot_dir = "../results/plots"
 
     results_files = "../results/metrics"
     os.mkdir("../results/") if not os.path.exists("../results/") else None
     os.mkdir(results_files) if not os.path.exists("../results/metrics") else None
-    
-    experiment_driver(
-        experiment_names=[
-            "image_text",
-            "speech_text",
+
+    # get experiment names form args
+    if len(sys.argv) > 1:
+        experiment_names = [sys.argv[1]]
+        calibrate = sys.argv[2] == "calibrate" if len(sys.argv) > 2 else False
+        print(f"Running experiment: {experiment_names} with calibrate={calibrate}")
+    else:
+        experiment_names = [
             "image_speech",
-        ],
+            "speech_text",
+            "image_text",
+            "caption_density_it",
+            "caption_density_is",
+        ]
+        calibrate = False
+    
+    # first run all non-calibrated experiments, then run all calibrated experiments
+    
+    if calibrate:
+        print(f"\n\nRunning calibration for {experiment_names} with K={200}")
+        experiment_driver(
+            experiment_names=experiment_names,
+            EXPERIMENTS=EXPERIMENTS,
+            model_set="test",
+            num_chunks= number_of_chunks,
+            clip=True,
+            exact=False,
+            q=0.9,
+            calibrate=True,
+            calibration_K=200,# XXX 200
+            plot=True,
+            results_file=f"{results_files}/results.csv",
+        )
+    else:
+        experiment_driver(
+        experiment_names=experiment_names,
         EXPERIMENTS=EXPERIMENTS,
         model_set="test",
         num_chunks= number_of_chunks,
@@ -720,25 +808,7 @@ if __name__ == "__main__":
         q=0.9,
         calibrate=False,
         calibration_K=200,# XXX 200
-        plot=True,
-        results_file=f"{results_files}/results.csv",
-    )
-
-    experiment_driver(
-        experiment_names=[
-            "image_text",
-            "speech_text",
-            "image_speech",
-        ],
-        EXPERIMENTS=EXPERIMENTS,
-        model_set="test",
-        num_chunks= number_of_chunks,
-        clip=True,
-        exact=False,
-        q=0.9,
-        calibrate=True,
-        calibration_K=200,# XXX 200
-        plot=True,
+        plot=False,
         results_file=f"{results_files}/results.csv",
     )
 

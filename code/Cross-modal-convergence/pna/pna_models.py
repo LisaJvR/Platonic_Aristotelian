@@ -101,8 +101,8 @@ MODELSETS = {
             
             "huggyllama/llama-7b",
             "huggyllama/llama-13b",# skipped
-            # "huggyllama/llama-30b",# P
-            # "huggyllama/llama-65b", # P 
+            "huggyllama/llama-30b",# P
+            "huggyllama/llama-65b", # P 
             
             # Platonic 
             "google/gemma-2b",
