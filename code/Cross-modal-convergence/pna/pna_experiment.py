@@ -1,8 +1,8 @@
 import torch
 from pna_models import get_models
 from pna_data import load_all_chunks
-from pna_metrics import  knn_layer, compare_layers, compute_cka
-from pna_plotting_code import  plot_results, get_reg_coeffs
+from pna_metrics import  knn_layer, compare_layers, compute_cka, compute_cka_kernel
+from pna_plotting_code import  plot_results, get_reg_coeffs, plot_results_ordered
 import os
 from tqdm import tqdm
 from calibrated_similarity import calibrate, calibrate_layers
@@ -444,6 +444,13 @@ def run_experiment(
 
     existing_results = load_results(results_file)
 
+    # just do linear cka for now since rbf is often unstable.
+    if metric_name in ("cka_linear_biased", "cka_linear_unbiased", "svcca") and (calibrate==True):
+        calibrate = True
+    else:
+        calibrate = False
+    
+
     for model_A in tqdm(
         models_A,
         desc=f"{metric_name}: {modality_a}",
@@ -634,12 +641,20 @@ def plot_experiment_results(
         plot_type="scaling",
     )
 
-    plot_results(
+    # plot_results(
+    #     raw_results,
+    #     calibrated_results,
+    #     metric_name,
+    #     modalities,
+    #     file_name,
+    # )
+    plot_results_ordered(
         raw_results,
         calibrated_results,
         metric_name,
         modalities,
-        file_name,
+        file_name ,
+        order_by="size",
     )
 
 def make_plot_filename(
@@ -709,7 +724,9 @@ if __name__ == "__main__":
                 "cka_linear_biased",
                 "cka_rbf_biased",
                 "cka_linear_unbiased",
-                "cka_rbf_unbiased"
+                "cka_rbf_unbiased",
+                "svcca",
+                
             ],
         },
       
@@ -721,7 +738,8 @@ if __name__ == "__main__":
                 "cka_linear_biased",
                 "cka_rbf_biased",
                 "cka_linear_unbiased",
-                "cka_rbf_unbiased"
+                "cka_rbf_unbiased",
+                "svcca",
             ],
         },
 
@@ -733,7 +751,8 @@ if __name__ == "__main__":
                 "cka_linear_biased",
                 "cka_rbf_biased",
                 "cka_linear_unbiased",
-                "cka_rbf_unbiased"
+                "cka_rbf_unbiased",
+                "svcca",
             ],
         },
 
@@ -742,8 +761,8 @@ if __name__ == "__main__":
             "n_sets": 5,
             "metrics": [
                 "mknn_k10",
-                "cka_linear_unbiased",
-                "cka_rbf_unbiased"
+                "cka_linear_biased",
+                "cka_rbf_biased"
             ]
         },
 
@@ -752,8 +771,8 @@ if __name__ == "__main__":
             "n_sets": 5,
             "metrics": [
                 "mknn_k10",
-                "cka_linear_unbiased",
-                "cka_rbf_unbiased"
+                "cka_linear_biased",
+                "cka_rbf_biased"
             ]
         },
     }
@@ -772,16 +791,28 @@ if __name__ == "__main__":
         print(f"Running experiment: {experiment_names} with calibrate={calibrate}")
     else:
         experiment_names = [
+            # "caption_density_it",
+            # "caption_density_is",
             "image_speech",
             "speech_text",
             "image_text",
-            "caption_density_it",
-            "caption_density_is",
         ]
-        calibrate = False
+        calibrate = True
     
     # first run all non-calibrated experiments, then run all calibrated experiments
-    
+    experiment_driver(
+        experiment_names=experiment_names,
+        EXPERIMENTS=EXPERIMENTS,
+        model_set="test",
+        num_chunks= number_of_chunks,
+        clip=True,
+        exact=False,
+        q=0.9,
+        calibrate=False,
+        calibration_K=200,# XXX 200
+        plot=False,
+        results_file=f"{results_files}/results.csv",
+    )
     if calibrate:
         print(f"\n\nRunning calibration for {experiment_names} with K={200}")
         experiment_driver(
@@ -797,20 +828,7 @@ if __name__ == "__main__":
             plot=True,
             results_file=f"{results_files}/results.csv",
         )
-    else:
-        experiment_driver(
-        experiment_names=experiment_names,
-        EXPERIMENTS=EXPERIMENTS,
-        model_set="test",
-        num_chunks= number_of_chunks,
-        clip=True,
-        exact=False,
-        q=0.9,
-        calibrate=False,
-        calibration_K=200,# XXX 200
-        plot=False,
-        results_file=f"{results_files}/results.csv",
-    )
+
 
     # plot_experiment_results(
     #     results_file=f"{results_files}/results.csv",

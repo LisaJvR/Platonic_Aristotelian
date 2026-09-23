@@ -39,7 +39,7 @@ METRICS = {
         "fn": compute_cka,
         "kwargs": {
             "kernel": "rbf",
-            "rbf_sigma": 1.0,
+            "rbf_sigma": 0.4,
             "unbiased": True,
         },
         "higher_is_better": True,
@@ -49,7 +49,7 @@ METRICS = {
         "fn": compute_cka,
         "kwargs": {
             "kernel": "rbf",
-            "rbf_sigma": 1.0,
+            "rbf_sigma": 0.4,
             "unbiased": False,
         },
         "higher_is_better": True,

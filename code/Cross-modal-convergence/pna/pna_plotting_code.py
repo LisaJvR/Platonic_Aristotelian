@@ -7,6 +7,7 @@ import numpy as np
 from pna_models import get_size, image_family, pretty_model_name, text_family, speech_family
 from platonic_plot_estimates import get_platonic_trend
 
+plot_dir = "../results/plots"
 # ------------------------------------------------------------
     # Styling taken from the reference figure
     # ------------------------------------------------------------
@@ -34,9 +35,11 @@ image_families = [
 
 speech_families = [
         "wav2vec2",
+        "wave2vec XLSR"
         "hubert",
         "wavlm",
         "unispeech"
+        "data2vec-audio"
     ]
 
 def get_reg_coeffs(X, y):
@@ -101,12 +104,17 @@ def plot_results(results, c_results, type, modalities, file_name):
     else:
         print(f"Warning: Unknown modality {modalities[0]}. No plots will be generated.")
 
+    # remove facebook/wav2vec2-large-lv60
+    results = {k: v for k, v in results.items() if "facebook/wav2vec2-large-lv60" not in k[0] and "facebook/wav2vec2-large-lv60" not in k[1]}#XXX
+    
     for family  in families:
         family_models = list({
             y_model
             for (y_model, x_model), score in results.items()
             if belongs_to_family(y_model, family, modalities)
         })
+        print(f"family: {family}, family_models: {family_models}")
+
 
         if not family_models:
             continue
@@ -185,8 +193,11 @@ def plot_results(results, c_results, type, modalities, file_name):
         x_trend = np.sort(all_x)
         y_trend = coeff[0][0] * x_trend + intercept[0]
 
-        if (modalities[0] == "image") and (modalities[1] == "text"):    
-            all_coeffs, avg_family_coeffs = get_platonic_trend(x,"Platonic", metric=type)
+        if (modalities[0] == "image") and (modalities[1] == "text"):
+            met = type
+            if type == "cka_linear_biased":
+                met = "cka_linear"    
+            all_coeffs, avg_family_coeffs = get_platonic_trend(x,"Platonic", metric=met)
             plat_y  = all_coeffs[(family, size)] * x_trend + intercept[0]
 
             ax.fill_between(
@@ -258,7 +269,7 @@ def plot_results(results, c_results, type, modalities, file_name):
         # remove repeated labels if necessary
         unique = {}
         for handle, label in zip(handles, labels):
-                unique[label] = handle
+            unique[label] = handle
 
         desired_order = []
         if modalities[0] == "image":
@@ -272,13 +283,16 @@ def plot_results(results, c_results, type, modalities, file_name):
                 desired_order.append("expected = {:.4f}x ".format(avg_family_coeffs[family]))
 
         elif modalities[0] == "speech":
-            desired_order = ["base", "large", "xlarge"]
-            desired_order = ["base"] # XXX
+            print(f"unique: {unique}")
+            desired_order = ["tiny", "small", "base", "large","xlarge", "huge", "giant"] 
+            # desired_order = ["base"] # XXX
 
         desired_order.append("observed = {:.4f}x ".format(coeff[0][0]))
 
         # NEW Calibrated ------------------------- 
 
+        # get desired order of unique that is in desired order
+        desired_order = [label for label in desired_order if label in unique] #XXX
         legend_handles = [unique[s] for s in desired_order]
         legend_labels = desired_order.copy()
         from matplotlib.lines import Line2D
@@ -342,16 +356,16 @@ def plot_results(results, c_results, type, modalities, file_name):
         for x_fam, positions in families_x.items():
                 centre = np.mean(positions)
 
-                ax.text(
-                    centre,
-                    -0.19,
-                    x_fam,
-                    transform=ax.get_xaxis_transform(),
-                    ha="center",
-                    va="top",
-                    fontsize=15,
-                    color=text_color,
-                )
+                # ax.text(
+                #     centre,
+                #     -0.19,
+                #     x_fam,
+                #     transform=ax.get_xaxis_transform(),
+                #     ha="center",
+                #     va="top",
+                #     fontsize=15,
+                #     color=text_color,
+                # )
         plt.subplots_adjust(
                         left=0.27,
                         right=0.97,
@@ -359,13 +373,593 @@ def plot_results(results, c_results, type, modalities, file_name):
                         bottom=0.25,
                     )
             
-        os.makedirs("../plots/results/", exist_ok=True)
+        os.makedirs(plot_dir, exist_ok=True)
         plt.savefig(
-                        f"../plots/results/{file_name}_{family}.png",
+                        f"{plot_dir}/{file_name}_{family}.png",
                         dpi=300,
                         bbox_inches="tight",
                     )
             
         plt.close(fig)
-        print(f"Saved plot for {family} in ../plots/results/{file_name}_{family}.png")
+        print(f"Saved plot for {family} in {plot_dir}/{file_name}_{family}.png")
 
+
+def plot_results_ordered(
+    results,
+    c_results,
+    type,
+    modalities,
+    file_name,
+    order_by="size",
+):
+    """
+    Same plotting function as plot_results(), but allows the x-axis
+    models to be ordered by:
+
+        order_by="size"   -> increasing model size
+        order_by="score"  -> increasing mean metric score
+
+    For score ordering, the score of each x-axis model is the mean
+    alignment score across all y-models in the current family.
+    """
+
+    os.makedirs("../plots", exist_ok=True)
+
+    plt.rcParams.update({
+        "font.family": "DejaVu Sans",
+        "font.size": 12,
+        "axes.labelsize": 14,
+        "axes.titlesize": 16,
+        "xtick.labelsize": 11,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 11,
+
+        "axes.labelcolor": text_color,
+        "axes.edgecolor": "#c5cbd1",
+
+        "xtick.color": text_color,
+        "ytick.color": text_color,
+
+        "axes.linewidth": 2.0,
+
+        "grid.color": "#dddddd",
+        "grid.linewidth": 1.5,
+        "grid.alpha": 0.8,
+    })
+
+    # ------------------------------------------------------------
+    # Select families
+    # ------------------------------------------------------------
+    if modalities[0] == "image":
+        families = image_families
+
+    elif modalities[0] == "speech":
+        families = speech_families
+
+    else:
+        print(
+            f"Warning: Unknown modality {modalities[0]}. "
+            "No plots will be generated."
+        )
+        return
+
+
+    # ------------------------------------------------------------
+    # Remove facebook/wav2vec2-large-lv60
+    # ------------------------------------------------------------
+    results = {
+        k: v
+        for k, v in results.items()
+        if "facebook/wav2vec2-large-lv60" not in k[0]
+        and "facebook/wav2vec2-large-lv60" not in k[1]
+    }
+
+
+    # ============================================================
+    # Loop through each family
+    # ============================================================
+    for family in families:
+
+        family_models = list({
+            y_model
+            for (y_model, x_model), score in results.items()
+            if belongs_to_family(y_model, family, modalities)
+        })
+
+        print(
+            f"family: {family}, "
+            f"family_models: {family_models}"
+        )
+
+        if not family_models:
+            continue
+
+
+        fig, ax = plt.subplots(
+            figsize=(4.7, 5.5),
+            dpi=300
+        )
+
+        ax.set_facecolor("#f3f3f3")
+        fig.patch.set_facecolor("white")
+
+
+        # ========================================================
+        # Establish x-axis models
+        # ========================================================
+        first_model = family_models[0]
+
+        x_models = [
+            x_model
+            for (y_model, x_model) in results.keys()
+            if y_model == first_model
+        ]
+
+        # Remove duplicates while preserving original order
+        x_models = list(dict.fromkeys(x_models))
+
+
+        # ========================================================
+        # NEW: ORDER X AXIS
+        # ========================================================
+
+        if order_by == "size":
+
+            size_order = {
+                "tiny": 0,
+                "small": 1,
+                "base": 2,
+                "large": 3,
+                "xlarge": 4,
+                "huge": 5,
+                "giant": 6,
+            }
+
+            x_models = sorted(
+                x_models,
+                key=lambda model: size_order.get(
+                    get_size(model),
+                    999
+                )
+            )
+
+
+        elif order_by == "score":
+
+            def get_mean_score(x_model):
+                """
+                Mean metric score for this x_model across
+                all y-models in the current family.
+                """
+
+                scores = [
+                    results[(y_model, x_model)]
+                    for y_model in family_models
+                    if (y_model, x_model) in results
+                ]
+
+                if len(scores) == 0:
+                    return np.inf
+
+                return np.mean(scores)
+
+
+            x_models = sorted(
+                x_models,
+                key=get_mean_score
+            )
+
+
+        else:
+            raise ValueError(
+                f"Unknown order_by='{order_by}'. "
+                "Use 'size' or 'score'."
+            )
+
+
+        # Print ordering so you can verify it
+        print(f"\nX-axis ordering ({order_by}):")
+
+        for model in x_models:
+
+            if order_by == "size":
+                print(
+                    f"{pretty_model_name(model):30s} "
+                    f"{get_size(model)}"
+                )
+
+            elif order_by == "score":
+                print(
+                    f"{pretty_model_name(model):30s} "
+                    f"{get_mean_score(model):.4f}"
+                )
+
+
+        x = np.arange(len(x_models))
+
+
+        # ========================================================
+        # Plot raw results
+        # ========================================================
+        all_data = []
+
+        for y_model in family_models:
+
+            values = [
+                results[(y_model, x_model)]
+                for x_model in x_models
+            ]
+
+            size = get_size(y_model)
+            color = size_colors[size]
+
+            ax.plot(
+                x,
+                values,
+                color=color,
+                linewidth=3.0,
+                marker="o",
+                markersize=9,
+                markeredgewidth=0,
+                label=size,
+                zorder=3,
+            )
+
+            all_data.append((x, values))
+
+
+            # ----------------------------------------------------
+            # Calibrated
+            # ----------------------------------------------------
+            if c_results:
+
+                calibrated_values = [
+                    c_results.get(
+                        (y_model, x_model),
+                        np.nan
+                    )
+                    for x_model in x_models
+                ]
+
+                if not np.all(
+                    np.isnan(calibrated_values)
+                ):
+
+                    ax.plot(
+                        x,
+                        calibrated_values,
+                        color=color,
+                        linewidth=2.5,
+                        linestyle=":",
+                        marker="o",
+                        markersize=7,
+                        markeredgewidth=0,
+                        zorder=3,
+                    )
+
+
+        # ========================================================
+        # Regression trend
+        # ========================================================
+        all_x = np.concatenate([
+            data[0]
+            for data in all_data
+        ])
+
+        all_y = np.concatenate([
+            data[1]
+            for data in all_data
+        ])
+
+
+        coeff, intercept = get_reg_coeffs(
+            all_x.reshape(-1, 1),
+            all_y.reshape(-1, 1)
+        )
+
+        x_trend = np.sort(all_x)
+
+        y_trend = (
+            coeff[0][0] * x_trend
+            + intercept[0]
+        )
+
+
+        # ========================================================
+        # Platonic expected trend
+        # ========================================================
+        if (
+            modalities[0] == "image"
+            and modalities[1] == "text"
+        ):
+
+            met = type
+
+            if type == "cka_linear_biased":
+                met = "cka_linear"
+
+
+            all_coeffs, avg_family_coeffs = (
+                get_platonic_trend(
+                    x,
+                    "Platonic",
+                    metric=met
+                )
+            )
+
+            plat_y = (
+                all_coeffs[(family, size)]
+                * x_trend
+                + intercept[0]
+            )
+
+            ax.fill_between(
+                x_trend,
+                plat_y,
+                y_trend,
+                color="lightgrey",
+                alpha=0.5,
+                zorder=1,
+            )
+
+            ax.plot(
+                x_trend,
+                plat_y,
+                color="grey",
+                linewidth=1.5,
+                linestyle="--",
+                zorder=2,
+                label=(
+                    "expected = {:.4f}x "
+                    .format(
+                        avg_family_coeffs[family]
+                    )
+                ),
+            )
+
+
+        # ========================================================
+        # Observed trend
+        # ========================================================
+        ax.plot(
+            x_trend,
+            y_trend,
+            color="black",
+            linewidth=1.5,
+            linestyle="--",
+            zorder=2,
+            label=(
+                "observed = {:.4f}x "
+                .format(coeff[0][0])
+            ),
+        )
+
+
+        # ========================================================
+        # X labels
+        # ========================================================
+        ax.set_xticks(x)
+
+        ax.set_xticklabels(
+            [
+                pretty_model_name(m)
+                for m in x_models
+            ],
+            rotation=50,
+            ha="right",
+            rotation_mode="anchor",
+            color=text_color,
+        )
+
+
+        ax.set_ylabel(
+            f"Alignment to {family.upper()}",
+            fontsize=22,
+            color=text_color,
+        )
+
+
+        ax.yaxis.set_major_formatter(
+            FormatStrFormatter("%.3f")
+        )
+
+
+        ax.tick_params(
+            axis="both",
+            direction="out",
+            length=8,
+            width=2,
+            colors=text_color,
+        )
+
+
+        ax.grid(
+            True,
+            axis="both"
+        )
+
+        ax.set_axisbelow(True)
+
+
+        # ========================================================
+        # Spines
+        # ========================================================
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        ax.spines["left"].set_color(
+            "#c3c9ce"
+        )
+
+        ax.spines["bottom"].set_color(
+            "#c3c9ce"
+        )
+
+        ax.spines["left"].set_linewidth(
+            2.5
+        )
+
+        ax.spines["bottom"].set_linewidth(
+            2.5
+        )
+
+
+        # ========================================================
+        # Legend
+        # ========================================================
+        handles, labels = (
+            ax.get_legend_handles_labels()
+        )
+
+        unique = {}
+
+        for handle, label in zip(
+            handles,
+            labels
+        ):
+            unique[label] = handle
+
+
+        desired_order = []
+
+
+        if modalities[0] == "image":
+
+            desired_order = [
+                size
+                for size in [
+                    "tiny",
+                    "small",
+                    "base",
+                    "large",
+                    "huge",
+                    "giant",
+                ]
+                if size in unique
+            ]
+
+            if (
+                modalities[0] == "image"
+                and modalities[1] == "text"
+            ):
+
+                desired_order.append(
+                    "expected = {:.4f}x "
+                    .format(
+                        avg_family_coeffs[
+                            family
+                        ]
+                    )
+                )
+
+
+        elif modalities[0] == "speech":
+
+            desired_order = [
+                "tiny",
+                "small",
+                "base",
+                "large",
+                "xlarge",
+                "huge",
+                "giant",
+            ]
+
+
+        desired_order.append(
+            "observed = {:.4f}x "
+            .format(coeff[0][0])
+        )
+
+
+        desired_order = [
+            label
+            for label in desired_order
+            if label in unique
+        ]
+
+
+        legend = ax.legend(
+            [unique[s] for s in desired_order],
+            desired_order,
+            loc="upper left",
+            frameon=True,
+            fancybox=False,
+            shadow=True,
+            facecolor="white",
+            edgecolor="#b8b8b8",
+            framealpha=1.0,
+            handlelength=0.8,
+            handletextpad=0.6,
+            borderpad=0.4,
+            labelspacing=0.3,
+        )
+
+
+        # ========================================================
+        # Group names
+        # ========================================================
+        families_x = {}
+
+        f = None
+
+        for i, model in enumerate(x_models):
+
+            if modalities[1] == "text":
+                f = text_family(model)
+
+            if modalities[1] == "speech":
+                f = speech_family(model)
+
+            if modalities[1] == "image":
+                f = image_family(model)
+
+            if f:
+                families_x.setdefault(
+                    f,
+                    []
+                ).append(i)
+
+
+        for x_fam, positions in (
+            families_x.items()
+        ):
+            centre = np.mean(positions)
+
+
+        # ========================================================
+        # Layout
+        # ========================================================
+        plt.subplots_adjust(
+            left=0.27,
+            right=0.97,
+            top=0.97,
+            bottom=0.25,
+        )
+
+
+        # ========================================================
+        # Save
+        # ========================================================
+        os.makedirs(
+            plot_dir,
+            exist_ok=True
+        )
+
+        plt.savefig(
+            f"{plot_dir}/"
+            f"{file_name}_{family}_"
+            f"{order_by}.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+
+        plt.close(fig)
+
+        print(
+            f"Saved plot for {family} in "
+            f"{plot_dir}/"
+            f"{file_name}_{family}_"
+            f"{order_by}.png"
+        )

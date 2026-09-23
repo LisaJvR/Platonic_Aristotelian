@@ -143,7 +143,7 @@ MODELSETS = {
             "facebook/wav2vec2-base",#self-supervised
             "facebook/wav2vec2-large",
             "facebook/wav2vec2-large-robust", # Same family/size, different pretraining data
-            "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
+            # "facebook/wav2vec2-large-lv60", # Same family/size, different pretraining data
 
             "facebook/wav2vec2-xls-r-300m", # cross lingual (larger pretrained dataset), not fine tuned, just checkpoints
             "facebook/wav2vec2-xls-r-1b",
@@ -258,34 +258,45 @@ def pretty_model_name(model_name: str) -> str:
     # ---------- Speech ----------
     if "wav2vec2-xls-r" in name:
         size = model_name.split("-")[-1]
-        return size
+        if size == "300m":
+            return "W2VX (B)"
+        if size == "1b":
+            return "W2VX (L)"
+
 
     if "wav2vec2" in name:
         if "large-robust" in name:
-            return "large (robust)"
+            return " W2V (L*)"
         if "large-lv60" in name:
-            return"large (lv60)"
+            return"W2V (L*)"
         if "large" in name:
-            return "large"
+            return "W2V (L)"
         if "base" in name:
-            return "base"
+            return "W2V (B)"
 
     if "hubert" in name:
         if "xlarge" in name:
-            return "xlarge"
+            return "HB (XL)"
         if "large" in name:
-            return "large"
+            return "HB (L)"
         if "base" in name:
-            return "base"
+            return "HB (B)"
 
     if "data2vec-audio" in name:
         size = model_name.split("-")[-1]
-        return size
+        if size == "base":
+            return "D2V (B)"
+        if size == "large":
+            return "D2V (L)"
 
     if "wavlm" in name:
         if "base-plus" in name:
-            return "base+"
+            return "WLM (B+)"
         size = model_name.split("-")[-1]
+        if size == "base":
+            return "WLM (B)"
+        if size == "large":
+            return "WLM (L)"
         return size
 
     if "unispeech-sat" in name:
@@ -357,7 +368,7 @@ def speech_family(model_name):
         name = model_name.lower()
 
         if "wav2vec2-xls-r" in name:
-            return "XLS-R"
+            return "W2VX"
         if "wav2vec2" in name:
             return "W2V"
         if "hubert" in name:

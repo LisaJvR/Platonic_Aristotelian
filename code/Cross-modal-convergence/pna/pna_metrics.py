@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from calibrated_similarity import calibrate, calibrate_layers
 import faiss
-# import CCA
+from sklearn.cross_decomposition import CCA
 _FAISS_RESOURCES = None
 from tqdm import tqdm
 
@@ -63,11 +63,22 @@ def compute_biased_linear_cka(feats_A, feats_B):
 
     return cka_value.item()
 
-def compute_cka_kernel(feats, kernel="linear", rbf_sigma=1.0, unbiased=False):
+def compute_cka_kernel(feats, kernel="linear", rbf_sigma=0.4, unbiased=False):
+    # center and norm first
     if kernel == "linear":
         kernel_matrix = torch.mm(feats, feats.T)
     elif kernel == "rbf":
-        kernel_matrix = torch.exp(-torch.cdist(feats, feats) ** 2 / (2 * rbf_sigma ** 2))
+        distances = torch.cdist(feats, feats)
+        mask = ~torch.eye(
+            distances.shape[0],
+            dtype=torch.bool,
+            device=distances.device
+        )
+
+        # Median Euclidean distance
+        median_distance = torch.median(distances[mask])
+        sigma = rbf_sigma * median_distance
+        kernel_matrix = torch.exp(  -(distances ** 2) / (2 * sigma ** 2))
 
     return kernel_matrix
 
@@ -89,6 +100,36 @@ def compute_cka(kernel_A, kernel_B, kernel="linear", rbf_sigma=1.0, unbiased=Fal
     return cka_value.item()
 
 
+
+
+def mutual_knn(knn_A, knn_B):
+    '''
+    mKNN(l,l) = 1/N sum_i^N (|KNN_A(i,l) intersect KNN_B(i,l)| / k)
+    Calculate the mutual knn between 2 sets embeddings (each from 1 layer)
+    knn_A and knn_B : [N, k]
+    '''
+    assert knn_A.shape == knn_B.shape
+    k = knn_A.shape[1] # number of neighbors
+
+    matches = knn_A.unsqueeze(2) == knn_B.unsqueeze(1) # [N, k, k] boolean tensor indicating matches
+    overlap = matches.any(dim=2).sum(dim=1)
+    per_sample_score = overlap.float() / k
+
+    return per_sample_score.mean().item()
+
+def compute_mutual_knn(layer_feats_A, layer_feats_B, topk):
+    '''
+    layer_feats_A and layer_feats_B : [N, 1, D]
+    Must recieve one pair or layers to compare.
+    '''
+    
+    knn_A = knn_layer(layer_feats_A, topk) #[N, k]
+    knn_B = knn_layer(layer_feats_B, topk) #[N, k]
+
+    return mutual_knn(knn_A, knn_B)
+
+
+# TODO --------------------------------------
 def compute_cknna(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=False, topk=10, distance_agnostic=False):
     '''
         From: Adapted from Koepke, https://github.com/minyoungg/platonic-rep/blob/main/metrics.py#L111
@@ -133,35 +174,6 @@ def compute_cknna(feats_A, feats_B, kernel="linear", rbf_sigma=1.0, unbiased=Fal
     sim_ll = similarity(kernel_B, kernel_B, topk)
 
     return sim_kl.item() / (torch.sqrt(sim_kk * sim_ll) + 1e-6).item()
-
-def mutual_knn(knn_A, knn_B):
-    '''
-    mKNN(l,l) = 1/N sum_i^N (|KNN_A(i,l) intersect KNN_B(i,l)| / k)
-    Calculate the mutual knn between 2 sets embeddings (each from 1 layer)
-    knn_A and knn_B : [N, k]
-    '''
-    assert knn_A.shape == knn_B.shape
-    k = knn_A.shape[1] # number of neighbors
-
-    matches = knn_A.unsqueeze(2) == knn_B.unsqueeze(1) # [N, k, k] boolean tensor indicating matches
-    overlap = matches.any(dim=2).sum(dim=1)
-    per_sample_score = overlap.float() / k
-
-    return per_sample_score.mean().item()
-
-def compute_mutual_knn(layer_feats_A, layer_feats_B, topk):
-    '''
-    layer_feats_A and layer_feats_B : [N, 1, D]
-    Must recieve one pair or layers to compare.
-    '''
-    
-    knn_A = knn_layer(layer_feats_A, topk) #[N, k]
-    knn_B = knn_layer(layer_feats_B, topk) #[N, k]
-
-    return mutual_knn(knn_A, knn_B)
-
-
-# TODO --------------------------------------
 
 def compute_rsa(X,Y):
     """How dissimilar the representations are"""
@@ -218,6 +230,7 @@ def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
     scores = torch.empty(n_layers_A,n_layers_B,dtype=torch.float32,device=device)
 
     if metric_fn == compute_cka:
+        import time
         # if metric_kwargs.get("unbiased", False):
             # compute all cka simultaneously in kernel space
         Y_kernels = []
