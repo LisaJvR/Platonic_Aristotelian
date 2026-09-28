@@ -237,8 +237,20 @@ def evaluate_pair(
             "raw_score": float(existing_results["raw_score"]),
             "layer_scores": None,
         }
+        if existing_results.get("calibrated_score") not in (None, "", "None"):
+            result.update({
+                "calibrated_score": float(existing_results["calibrated_score"]),
+                "p_value": float(existing_results["p_value"]),
+                "threshold": float(existing_results["threshold"]),
+            })
+        else:
+            result.update({
+                "calibrated_score": None,
+                "p_value": None,
+                "threshold": None,
+            })
 
-    if calibrate:
+    if calibrate and result.get("calibrated_score") in (None, "", "None"):
 
         calibrated, p, threshold = compute_calibrated_score(
             feats_A,
@@ -254,12 +266,7 @@ def evaluate_pair(
             "threshold": threshold.item(),
         })
     else:
-        result.update({
-            "calibrated_score": None,
-            "p_value": None,
-            "threshold": None,
-        })
-
+        print(f"Skipping calibration for {metric_fn.__name__} with kwargs {kwargs} (calibrated_score already exists)")
     return result
 
 def interleave_images(feats_A, num_captions=5):
@@ -445,7 +452,17 @@ def run_experiment(
     existing_results = load_results(results_file)
 
     # just do linear cka for now since rbf is often unstable.
-    if metric_name in ("cka_linear_biased", "cka_linear_unbiased", "svcca") and (calibrate==True):
+
+    if experiment_name == "image_text" and metric_name == "cka_linear_biased" and (calibrate==True):
+        calibrate = True
+    else:
+        calibrate = False
+    if experiment_name == "image_speech":
+        if metric_name in ("cka_linear_biased", "cka_linear_unbiased", "svcca", "mknn_k10") and (calibrate==True):
+            calibrate = True
+        else:
+            calibrate = False
+    if experiment_name == "speech_text" and metric_name == "cka_linear_biased" and (calibrate==True):
         calibrate = True
     else:
         calibrate = False
@@ -650,14 +667,15 @@ def plot_experiment_results(
         modalities,
         file_name,
     )
-    plot_results_ordered(
-        raw_results,
-        calibrated_results,
-        metric_name,
-        modalities,
-        file_name ,
-        order_by="size",
-    )
+    for order_by in ["family","size",  "score"]:
+        plot_results_ordered(
+            raw_results,
+            calibrated_results,
+            metric_name,
+            modalities,
+            file_name ,
+            order_by=order_by,
+        )
 
 def make_plot_filename(
     modalities,
@@ -831,11 +849,12 @@ if __name__ == "__main__":
             results_file=f"{results_files}/results.csv",
         )
 
-    # print(f" results will be saved to {results_files}/results.csv")
-    # plot_experiment_results(
-    #     results_file=f"{results_files}/results.csv",
-    #     experiment_name="image_text",
-    #     EXPERIMENTS=EXPERIMENTS,
-    #     metric_name="cka_linear_biased",
-    #     calibrated=False,
-    # )
+    # for experiment_name in experiment_names:
+    #     for metric_name in EXPERIMENTS[experiment_name]["metrics"]:
+    #         plot_experiment_results(
+    #             results_file=f"{results_files}/results.csv",
+    #             experiment_name=experiment_name,
+    #             EXPERIMENTS=EXPERIMENTS,
+    #             metric_name=metric_name,
+    #             calibrated=False,
+    #         )

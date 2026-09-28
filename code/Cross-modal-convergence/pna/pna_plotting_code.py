@@ -8,6 +8,7 @@ from pna_models import get_size, image_family, pretty_model_name, text_family, s
 from platonic_plot_estimates import get_platonic_trend
 
 plot_dir = "../results/plots"
+removed_models = ["mistral", "mixtral", "OLMo", "gemma"]
 # ------------------------------------------------------------
     # Styling taken from the reference figure
     # ------------------------------------------------------------
@@ -53,7 +54,7 @@ image_families = [
 
 speech_families = [
         "wav2vec2",
-        "wav2vec2-xls-r",
+        "wav2vec2-x",
         "hubert",
         "wavlm",
         "unispeech"
@@ -124,7 +125,7 @@ def plot_results(results, c_results, type, modalities, file_name):
         print(f"Warning: Unknown modality {modalities[0]}. No plots will be generated.")
 
     # remove facebook/wav2vec2-large-lv60
-    results = {k: v for k, v in results.items() if "facebook/wav2vec2-large-lv60" not in k[0] and "facebook/wav2vec2-large-lv60" not in k[1]}#XXX
+    results = {k: v for k, v in results.items() if "facebook/wav2vec2-large-lv60" not in k[0] and "facebook/wav2vec2-large-lv60" not in k[1]}#XXX skip models
     
     for family  in families:
         family_models = list({
@@ -154,11 +155,10 @@ def plot_results(results, c_results, type, modalities, file_name):
         results = {
             k: v
             for k, v in results.items()
-            if "mistral" not in k[1]
-            and "mixtral" not in k[1]
-            and "OLMo" not in k[1]
-            and "gemma" not in k[1]
+                if not any(rm in k[0] or rm in k[1] for rm in removed_models)
         }
+        results = {k: v for k, v in results.items() if "facebook/wav2vec2-large-lv60" not in k[0] and "facebook/wav2vec2-large-lv60" not in k[1]}#XXX skip models
+       
 
         x_models = [
             x_model
@@ -203,10 +203,15 @@ def plot_results(results, c_results, type, modalities, file_name):
         for y_model in family_models:
 
             # Uncalibrated ---------------------
-            values = [
+            try:
+                values = [
                 results[(y_model, x_model)]
                 for x_model in x_models
-            ]
+                ]
+            
+            except KeyError:
+                print(f"Warning: Missing results for y_model '{y_model}' in family '{family}'. Skipping this model.")
+                continue
 
             size = get_size(y_model)
             color = size_colors[size]
@@ -228,10 +233,13 @@ def plot_results(results, c_results, type, modalities, file_name):
 
         # Calibrated -----------------------------
         if c_results:
+            
+            c_results = {k: v for k, v in c_results.items() if "facebook/wav2vec2-large-lv60" not in k[0] and "facebook/wav2vec2-large-lv60" not in k[1]}#XXX skip models
             calibrated_values = [
                 c_results.get((y_model, x_model), np.nan)
                 for x_model in x_models
             ]
+            
 
             if not np.all(np.isnan(calibrated_values)):
                 ax.plot(
@@ -255,10 +263,10 @@ def plot_results(results, c_results, type, modalities, file_name):
         x_trend = np.sort(all_x)
         y_trend = coeff[0][0] * x_trend + intercept[0]
 
-        if (modalities[0] == "image") and (modalities[1] == "text"):
+        if (modalities[0] == "image") and (modalities[1] == "text") and type in ["mknn_k10", "cka_linear_biased"]:
             met = type
             if type == "cka_linear_biased":
-                met = "cka_linear"    
+                met = "cka_linear"
             all_coeffs, avg_family_coeffs = get_platonic_trend(x,"Platonic", metric=met)
             plat_y  = all_coeffs[(family, size)] * x_trend + intercept[0]
 
@@ -298,9 +306,11 @@ def plot_results(results, c_results, type, modalities, file_name):
                 rotation_mode="anchor",
                 color=text_color,
             )
+        
+        ax.set_title(f"{family.upper()}",fontsize=22,color=text_color)
         ax.set_ylabel(
-        f"Alignment to {family.upper()}",
-        fontsize=22,
+        f"Alignment score",
+        fontsize=16,
         color=text_color,
         )
 
@@ -341,7 +351,7 @@ def plot_results(results, c_results, type, modalities, file_name):
                 if size in unique
             ]
 
-            if (modalities[0] == "image") & (modalities[1] == "text"):
+            if (modalities[0] == "image") and (modalities[1] == "text") and type in ["mknn_k10", "cka_linear_biased"]:
                 desired_order.append("expected = {:.4f}x ".format(avg_family_coeffs[family]))
 
         elif modalities[0] == "speech":
@@ -511,7 +521,9 @@ def plot_results_ordered(
     # ------------------------------------------------------------
     results = {
         k: v
+        
         for k, v in results.items()
+            if not any(rm in k[0] or rm in k[1] for rm in removed_models)
         if "facebook/wav2vec2-large-lv60" not in k[0]
         and "facebook/wav2vec2-large-lv60" not in k[1]
     }
@@ -643,6 +655,37 @@ def plot_results_ordered(
                 key=get_mean_score
             )
 
+        elif order_by == "family":
+            
+            family_order = {
+                "dinov2": 0,
+                "clip": 1,
+                "clip (12K ft)": 2,
+                "mae": 3,
+                "imagenet21k": 4,
+                "data2vec-vision": 5,
+
+                "W2V": 0,
+                "W2VX": 1,
+                "HB": 3,
+                "WavLM": 2,
+                "D2V": 5,
+
+                "BLOOM":0,
+                "OpenLLaMA":1,
+                "LLaMA":2,
+            }
+
+            x_models = sorted(
+                x_models,
+                key=lambda model: family_order.get(
+                    image_family(model)
+                    if modalities[1] == "image"
+                    else speech_family(model)
+                    if modalities[1] == "speech"
+                    else text_family(model)
+                ,999),
+            )
 
         else:
             raise ValueError(
@@ -666,6 +709,11 @@ def plot_results_ordered(
                 print(
                     f"{pretty_model_name(model):30s} "
                     f"{get_mean_score(model):.4f}"
+                )
+            elif order_by == "family":
+                print(
+                    f"{pretty_model_name(model):30s} "
+                    f"{image_family(model) if modalities[1] == 'image' else speech_family(model) if modalities[1] == 'speech' else text_family(model)}"
                 )
 
 
@@ -765,6 +813,7 @@ def plot_results_ordered(
         if (
             modalities[0] == "image"
             and modalities[1] == "text"
+            and type in ["mknn_k10", "cka_linear_biased"]
         ):
 
             met = type
@@ -935,6 +984,7 @@ def plot_results_ordered(
             if (
                 modalities[0] == "image"
                 and modalities[1] == "text"
+                and "rbf" not in type
             ):
 
                 desired_order.append(

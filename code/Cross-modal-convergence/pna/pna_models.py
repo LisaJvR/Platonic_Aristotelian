@@ -217,24 +217,24 @@ def pretty_model_name(model_name: str) -> str:
         return size
 
     if "data2vec-vision" in name:
-        size = model_name.split("-")[-1]
+        size = model_name.split('-')[-1]
         return size
 
     # ---------- Text ----------
     if "bloom" in name:
-        return f"bloom{model_name.split("-")[-1]}"
+        return f"bloom{model_name.split('-')[-1]}"
 
     if "open_llama" in name:
         return f"openllama{model_name.split('_')[-1]}"
 
     if "huggyllama/llama" in name:
-        return f"llama{model_name.split("-")[-1]}"
+        return f"llama{model_name.split('-')[-1]}"
 
     if "meta-llama-3" in name:
-        return  model_name.split("-")[-1]
+        return  model_name.split('-')[-1]
 
     if "gemma" in name:
-        return f"gemma{model_name.split("-")[-1]}"
+        return f"gemma{model_name.split('-')[-1]}"
 
     if "mistral-" in name:
         size = re.search(r"(\d+b)", name)
@@ -252,12 +252,12 @@ def pretty_model_name(model_name: str) -> str:
         return f"olmo{size}"
 
     if "data2vec-text" in name:
-        size = model_name.split("-")[-1]
+        size = model_name.split('-')[-1]
         return f"data2vec{size}"
 
     # ---------- Speech ----------
     if "wav2vec2-xls-r" in name:
-        size = model_name.split("-")[-1]
+        size = model_name.split('-')[-1]
         if size == "300m":
             return "wave2vecxls300m"
         if size == "1b":
@@ -282,7 +282,7 @@ def pretty_model_name(model_name: str) -> str:
             return "hubert300m"
 
     if "data2vec-audio" in name:
-        size = model_name.split("-")[-1]
+        size = model_name.split('-')[-1]
         if size == "base":
             return "data2vec300m"
         if size == "large":
@@ -291,7 +291,7 @@ def pretty_model_name(model_name: str) -> str:
     if "wavlm" in name:
         if "base-plus" in name:
             return "wavlmplus300m"
-        size = model_name.split("-")[-1]
+        size = model_name.split('-')[-1]
         if size == "base":
             return "wavlm300m"
         if size == "large":
@@ -299,7 +299,7 @@ def pretty_model_name(model_name: str) -> str:
         return size
 
     if "unispeech-sat" in name:
-        size = model_name.split("-")[-1]
+        size = model_name.split('-')[-1]
         return size
 
     # fallback
