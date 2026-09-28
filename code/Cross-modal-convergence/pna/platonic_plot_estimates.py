@@ -546,10 +546,10 @@ def get_platonic_trend(x, type= "Platonic", metric="mknn_k10"):
         for image_model in data[type][metric][family]:
             
             y = np.array(list(data[type][metric][family][image_model].values()))
-            print(
-                f"{family} | {image_model}: "
-                f"x={len(x)}, y={len(y)}"
-            )
+            # print(
+            #     f"{family} | {image_model}: "
+            #     f"x={len(x)}, y={len(y)}"
+            # )
 
             if len(x) != len(y):
                 print(

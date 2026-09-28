@@ -234,7 +234,7 @@ def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
         # if metric_kwargs.get("unbiased", False):
             # compute all cka simultaneously in kernel space
         Y_kernels = []
-        for i in tqdm(range(n_layers_A), desc=f"Computing CKA scores {n_layers_A} layers A vs {n_layers_B} layers B"):
+        for i in range(n_layers_A):
             X = feats_A[:, i, :] 
             # compute kernel
             X_ker = compute_cka_kernel(X, **metric_kwargs)
@@ -250,7 +250,7 @@ def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
 
                 scores[i, j] = metric_fn(X_ker,Y_ker,**metric_kwargs,)
     else:
-        for i in tqdm(range(n_layers_A), desc=f"Computing: {metric_fn.__name__} scores {n_layers_A} layers A vs {n_layers_B} layers B"):
+        for i in range(n_layers_A):
             X = feats_A[:, i, :] 
             for j in range(n_layers_B):
                 Y = feats_B[:, j, :]

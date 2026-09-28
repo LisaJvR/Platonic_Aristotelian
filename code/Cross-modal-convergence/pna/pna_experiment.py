@@ -137,7 +137,7 @@ def compute_raw_scores(feats_A, feats_B_list, metric_fn, metric_kwargs):
             metric_fn,
             metric_kwargs,
         )
-        for feats_B in tqdm(feats_B_list, desc="Comparing layers", leave=False)
+        for feats_B in feats_B_list
     ]
 
     matrices = torch.stack(matrices)
@@ -243,6 +243,7 @@ def evaluate_pair(
                 "p_value": float(existing_results["p_value"]),
                 "threshold": float(existing_results["threshold"]),
             })
+            # print(f"Using existing calibrated score: {result['calibrated_score']}, p-value: {result['p_value']}, threshold: {result['threshold']}")
         else:
             result.update({
                 "calibrated_score": None,
@@ -266,7 +267,11 @@ def evaluate_pair(
             "threshold": threshold.item(),
         })
     else:
-        print(f"Skipping calibration for {metric_fn.__name__} with kwargs {kwargs} (calibrated_score already exists)")
+        result.update({
+            "calibrated_score": result.get("calibrated_score"),
+            "p_value": result.get("p_value"),
+            "threshold": result.get("threshold"),
+        })
     return result
 
 def interleave_images(feats_A, num_captions=5):
@@ -323,7 +328,7 @@ def run_caption_density_experiment(
     models_B = get_models(model_set, modality_b)
 
     if not (experiment_name == "caption_density_it" or experiment_name == "caption_density_is"):
-        print(f"Skipping {experiment_name} for caption density experiment (not supported)")
+        print(f"\nSkipping {experiment_name} for caption density experiment (not supported)")
         return
 
     existing_results = load_results(results_file)
@@ -438,6 +443,8 @@ def run_experiment(
     calibrate=False,
     calibration_K=200,
 ):
+    if calibrate == True:
+        print(f"\nRunning {experiment_name} with metric {metric_name} (calibrated)")
 
     experiment = EXPERIMENTS[experiment_name]
     metric_config = METRICS[metric_name]
@@ -453,21 +460,7 @@ def run_experiment(
 
     # just do linear cka for now since rbf is often unstable.
 
-    if experiment_name == "image_text" and metric_name == "cka_linear_biased" and (calibrate==True):
-        calibrate = True
-    else:
-        calibrate = False
-    if experiment_name == "image_speech":
-        if metric_name in ("cka_linear_biased", "cka_linear_unbiased", "svcca", "mknn_k10") and (calibrate==True):
-            calibrate = True
-        else:
-            calibrate = False
-    if experiment_name == "speech_text" and metric_name == "cka_linear_biased" and (calibrate==True):
-        calibrate = True
-    else:
-        calibrate = False
     
-
     for model_A in tqdm(
         models_A,
         desc=f"{metric_name}: {modality_a}",
@@ -496,9 +489,9 @@ def run_experiment(
                 metric_name,
                 require_calibrated=calibrate,
             ):
-                print(
-                    f"Skipping {model_A} vs {model_B} for {metric_name} (cal:{calibrate}) "
-                )
+                # print(
+                #     f"Skipping {model_A} vs {model_B} for {metric_name} (cal:{calibrate}) "
+                # )
                 continue
 
             # load all chunks
@@ -581,7 +574,7 @@ def experiment_driver(
 
         for metric_name in experiment["metrics"]:
 
-            print(f"  Metric: {metric_name}")
+            # print(f"  Metric: {metric_name}")
 
             if experiment_name in ("caption_density_it", "caption_density_is"):
                 run_caption_density_experiment(
@@ -598,6 +591,15 @@ def experiment_driver(
                     calibration_K=calibration_K,
                 )
             else:
+                calibrate = False
+                if experiment_name == "image_text" and metric_name == "cka_linear_biased":
+                        calibrate = True
+                if experiment_name == "image_speech":
+                    if metric_name in ("cka_linear_biased", "cka_linear_unbiased", "svcca", "mknn_k10"):
+                        calibrate = True
+                if experiment_name == "speech_text" and metric_name == "cka_linear_biased":
+                    calibrate = True
+
                 run_experiment(
                     experiment_name=experiment_name,
                     EXPERIMENTS=EXPERIMENTS,
@@ -641,7 +643,7 @@ def plot_experiment_results(
         calibrated=False,
     )
 
-    print(f"Raw results for {modalities[0]}-{modalities[1]} with metric {metric_name}:")
+    # print(f"Raw results for {modalities[0]}-{modalities[1]} with metric {metric_name}:")
 
     calibrated_results = {}
 
@@ -660,14 +662,14 @@ def plot_experiment_results(
         plot_type="scaling",
     )
 
-    plot_results(
-        raw_results,
-        calibrated_results,
-        metric_name,
-        modalities,
-        file_name,
-    )
-    for order_by in ["family","size",  "score"]:
+    # plot_results(
+    #     raw_results,
+    #     calibrated_results,
+    #     metric_name,
+    #     modalities,
+    #     file_name,
+    # )
+    for order_by in ["family"]:
         plot_results_ordered(
             raw_results,
             calibrated_results,
@@ -686,7 +688,7 @@ def make_plot_filename(
     modality_name = "-".join(modalities)
 
     calibration_name = (
-        "raw-vs-calibrated"
+        "calibrated"
         if calibrated
         else "raw"
     )
@@ -695,7 +697,7 @@ def make_plot_filename(
         f"{modality_name}"
         f"__{metric_name}"
         f"__{calibration_name}"
-        f"__{plot_type}"
+        # f"__{plot_type}"
     )
 
 def results_to_dict(
@@ -820,41 +822,41 @@ if __name__ == "__main__":
         calibrate = True
     
     # first run all non-calibrated experiments, then run all calibrated experiments
-    experiment_driver(
-        experiment_names=experiment_names,
-        EXPERIMENTS=EXPERIMENTS,
-        model_set="test",
-        num_chunks= number_of_chunks,
-        clip=True,
-        exact=False,
-        q=0.9,
-        calibrate=False,
-        calibration_K=200,# XXX 200
-        plot=False,
-        results_file=f"{results_files}/results.csv",
-    )
-    if calibrate:
-        print(f"\n\nRunning calibration for {experiment_names} with K={200}")
-        experiment_driver(
-            experiment_names=experiment_names,
-            EXPERIMENTS=EXPERIMENTS,
-            model_set="test",
-            num_chunks= number_of_chunks,
-            clip=True,
-            exact=False,
-            q=0.9,
-            calibrate=True,
-            calibration_K=200,# XXX 200
-            plot=True,
-            results_file=f"{results_files}/results.csv",
-        )
+    # experiment_driver(
+    #     experiment_names=experiment_names,
+    #     EXPERIMENTS=EXPERIMENTS,
+    #     model_set="test",
+    #     num_chunks= number_of_chunks,
+    #     clip=True,
+    #     exact=False,
+    #     q=0.9,
+    #     calibrate=False,
+    #     calibration_K=200,# XXX 200
+    #     plot=True,
+    #     results_file=f"{results_files}/results.csv",
+    # )
+    # if calibrate:
+    #     print(f"\n\nRunning calibration for {experiment_names} with K={200}")
+    #     experiment_driver(
+    #         experiment_names=experiment_names,
+    #         EXPERIMENTS=EXPERIMENTS,
+    #         model_set="test",
+    #         num_chunks= number_of_chunks,
+    #         clip=True,
+    #         exact=False,
+    #         q=0.9,
+    #         calibrate=True,
+    #         calibration_K=200,# XXX 200
+    #         plot=True,
+    #         results_file=f"{results_files}/results.csv",
+    #     )
 
-    # for experiment_name in experiment_names:
-    #     for metric_name in EXPERIMENTS[experiment_name]["metrics"]:
-    #         plot_experiment_results(
-    #             results_file=f"{results_files}/results.csv",
-    #             experiment_name=experiment_name,
-    #             EXPERIMENTS=EXPERIMENTS,
-    #             metric_name=metric_name,
-    #             calibrated=False,
-    #         )
+    for experiment_name in experiment_names:
+        for metric_name in EXPERIMENTS[experiment_name]["metrics"]:
+            plot_experiment_results(
+                results_file=f"{results_files}/results.csv",
+                experiment_name=experiment_name,
+                EXPERIMENTS=EXPERIMENTS,
+                metric_name=metric_name,
+                calibrated=True,
+            )

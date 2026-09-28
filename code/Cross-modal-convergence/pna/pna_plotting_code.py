@@ -9,6 +9,7 @@ from platonic_plot_estimates import get_platonic_trend
 
 plot_dir = "../results/plots"
 removed_models = ["mistral", "mixtral", "OLMo", "gemma"]
+calibration_types = ["mknn_k10", "cka_linear_biased"] #XXX
 # ------------------------------------------------------------
     # Styling taken from the reference figure
     # ------------------------------------------------------------
@@ -18,13 +19,14 @@ viridis = plt.colormaps.get_cmap("viridis")
     
 size_colors = {
         "small": viridis(0.98),
+        "tiny": viridis(0.9),
         "base": viridis(0.65),
         "large": viridis(0.35),
         "base+": viridis(0.65),
         "large (robust)": viridis(0.35),
         "xlarge": viridis(0.15),
         "giant": viridis(0.02),
-        "tiny": viridis(0.98),
+        
         "huge": viridis(0.15),
     }
 
@@ -96,7 +98,7 @@ def plot_results(results, c_results, type, modalities, file_name):
 
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 12,
+        "font.size": 14,
         "axes.labelsize": 14,
         "axes.titlesize": 16,
         "xtick.labelsize": 11,
@@ -133,7 +135,7 @@ def plot_results(results, c_results, type, modalities, file_name):
             for (y_model, x_model), score in results.items()
             if belongs_to_family(y_model, family, modalities)
         })
-        print(f"family: {family}, family_models: {family_models}")
+        # print(f"family: {family}, family_models: {family_models}")
 
 
         if not family_models:
@@ -285,7 +287,7 @@ def plot_results(results, c_results, type, modalities, file_name):
                 linewidth=1.5,
                 linestyle="--",
                 zorder=2,
-                label="expected = {:.4f}x ".format(avg_family_coeffs[family])
+                label="exp = {:.3f}x ".format(avg_family_coeffs[family])
             )
     
         ax.plot(
@@ -295,7 +297,7 @@ def plot_results(results, c_results, type, modalities, file_name):
         linewidth=1.5,
         linestyle="--",
         zorder=2,
-        label="observed = {:.4f}x ".format(coeff[0][0])
+        label="obs = {:.3f}x ".format(coeff[0][0])
             )
 
         ax.set_xticks(x)
@@ -352,14 +354,14 @@ def plot_results(results, c_results, type, modalities, file_name):
             ]
 
             if (modalities[0] == "image") and (modalities[1] == "text") and type in ["mknn_k10", "cka_linear_biased"]:
-                desired_order.append("expected = {:.4f}x ".format(avg_family_coeffs[family]))
+                desired_order.append("exo = {:.3f}x ".format(avg_family_coeffs[family]))
 
         elif modalities[0] == "speech":
             print(f"unique: {unique}")
             desired_order = ["tiny", "small", "base","base+", "large","large (robust)","xlarge", "huge", "giant"] 
             # desired_order = ["base"] # XXX
 
-        desired_order.append("observed = {:.4f}x ".format(coeff[0][0]))
+        desired_order.append("obs = {:.3f}x ".format(coeff[0][0]))
 
         # NEW Calibrated ------------------------- 
 
@@ -481,10 +483,10 @@ def plot_results_ordered(
         "font.family": "DejaVu Sans",
         "font.size": 12,
         "axes.labelsize": 14,
-        "axes.titlesize": 16,
-        "xtick.labelsize": 11,
+        "axes.titlesize": 15,
+        "xtick.labelsize": 12,
         "ytick.labelsize": 14,
-        "legend.fontsize": 11,
+        "legend.fontsize": 12,
 
         "axes.labelcolor": text_color,
         "axes.edgecolor": "#c5cbd1",
@@ -540,10 +542,10 @@ def plot_results_ordered(
             if belongs_to_family(y_model, family, modalities)
         })
 
-        print(
-            f"family: {family}, "
-            f"family_models: {family_models}"
-        )
+        # print(
+        #     f"family: {family}, "
+        #     f"family_models: {family_models}"
+        # )
 
         if not family_models:
             continue
@@ -695,26 +697,26 @@ def plot_results_ordered(
 
 
         # Print ordering so you can verify it
-        print(f"\nX-axis ordering ({order_by}):")
+        # print(f"\nX-axis ordering ({order_by}):")
 
-        for model in x_models:
+        # for model in x_models:
 
-            if order_by == "size":
-                print(
-                    f"{pretty_model_name(model):30s} "
-                    f"{get_size(model)}"
-                )
+        #     if order_by == "size":
+        #         print(
+        #             f"{pretty_model_name(model):30s} "
+        #             f"{get_size(model)}"
+        #         )
 
-            elif order_by == "score":
-                print(
-                    f"{pretty_model_name(model):30s} "
-                    f"{get_mean_score(model):.4f}"
-                )
-            elif order_by == "family":
-                print(
-                    f"{pretty_model_name(model):30s} "
-                    f"{image_family(model) if modalities[1] == 'image' else speech_family(model) if modalities[1] == 'speech' else text_family(model)}"
-                )
+        #     elif order_by == "score":
+        #         print(
+        #             f"{pretty_model_name(model):30s} "
+        #             f"{get_mean_score(model):.4f}"
+        #         )
+        #     elif order_by == "family":
+        #         print(
+        #             f"{pretty_model_name(model):30s} "
+        #             f"{image_family(model) if modalities[1] == 'image' else speech_family(model) if modalities[1] == 'speech' else text_family(model)}"
+        #         )
 
 
         x = np.arange(len(x_models))
@@ -853,7 +855,7 @@ def plot_results_ordered(
                 linestyle="--",
                 zorder=2,
                 label=(
-                    "expected = {:.4f}x "
+                    "exp = {:.3f}x "
                     .format(
                         avg_family_coeffs[family]
                     )
@@ -872,7 +874,7 @@ def plot_results_ordered(
             linestyle="--",
             zorder=2,
             label=(
-                "observed = {:.4f}x "
+                "obs = {:.3f}x "
                 .format(coeff[0][0])
             ),
         )
@@ -984,11 +986,11 @@ def plot_results_ordered(
             if (
                 modalities[0] == "image"
                 and modalities[1] == "text"
-                and "rbf" not in type
+                and type in calibration_types
             ):
 
                 desired_order.append(
-                    "expected = {:.4f}x "
+                    "exp = {:.3f}x "
                     .format(
                         avg_family_coeffs[
                             family
@@ -1011,7 +1013,7 @@ def plot_results_ordered(
 
 
         desired_order.append(
-            "observed = {:.4f}x "
+            "obs = {:.3f}x "
             .format(coeff[0][0])
         )
 
@@ -1092,8 +1094,7 @@ def plot_results_ordered(
 
         plt.savefig(
             f"{plot_dir}/"
-            f"{file_name}_{family}_"
-            f"{order_by}.png",
+            f"{file_name}_{family}.png",
             dpi=300,
             bbox_inches="tight",
         )
@@ -1101,9 +1102,8 @@ def plot_results_ordered(
 
         plt.close(fig)
 
-        print(
-            f"Saved plot for {family} in "
-            f"{plot_dir}/"
-            f"{file_name}_{family}_"
-            f"{order_by}.png"
-        )
+        # print(
+        #     f"Saved plot for {family} in "
+        #     f"{plot_dir}/"
+        #     f"{file_name}_{family}.png"
+        # )
