@@ -16,13 +16,31 @@ text_color = "#304766"
 viridis = plt.colormaps.get_cmap("viridis")
     
 size_colors = {
-        "small": viridis(0.90),
+        "small": viridis(0.98),
         "base": viridis(0.65),
         "large": viridis(0.35),
+        "base+": viridis(0.65),
+        "large (robust)": viridis(0.35),
+        "xlarge": viridis(0.15),
         "giant": viridis(0.02),
         "tiny": viridis(0.98),
         "huge": viridis(0.15),
     }
+
+size_markers = {
+    "tiny":           "o",
+    "small":          "o",
+
+    "base":           "o",
+    "base+":          "s",   # square
+
+    "large":          "o",
+    "large (robust)": "D",   # diamond
+
+    "xlarge":         "o",
+    "huge":           "o",
+    "giant":          "o",
+}
 
 image_families = [
         "dinov2",
@@ -35,7 +53,7 @@ image_families = [
 
 speech_families = [
         "wav2vec2",
-        "wave2vec XLSR"
+        "wav2vec2-xls-r",
         "hubert",
         "wavlm",
         "unispeech"
@@ -67,6 +85,7 @@ def belongs_to_family(image_model, family, modalities):
 
         return family in image_model
     if modalities[0] == "speech":
+
         return family in image_model
 
 
@@ -117,6 +136,7 @@ def plot_results(results, c_results, type, modalities, file_name):
 
 
         if not family_models:
+            # print(f"No models found for family '{family}'. Skipping plot.")
             continue
 
         fig, ax = plt.subplots(figsize=(4.7, 5.5), dpi=300)
@@ -130,11 +150,52 @@ def plot_results(results, c_results, type, modalities, file_name):
         # --------------------------------------------------------
         first_model = family_models[0]
 
+        # skip mistral, mixtral, omlo
+        results = {
+            k: v
+            for k, v in results.items()
+            if "mistral" not in k[1]
+            and "mixtral" not in k[1]
+            and "OLMo" not in k[1]
+            and "gemma" not in k[1]
+        }
+
         x_models = [
             x_model
             for (y_model, x_model) in results.keys()
             if y_model == first_model
         ]
+
+        family_order = {
+                        "dinov2": 0,
+                        "clip": 1,
+                        "clip (12K ft)": 2,
+                        "mae": 3,
+                        "imagenet21k": 4,
+                        "data2vec-vision": 5,
+        
+                        "W2V": 0,
+                        "W2VX": 1,
+                        "HB": 3,
+                        "WavLM": 2,
+                        "D2V": 5,
+
+                        "BLOOM":0,
+                        "OpenLLaMA":1,
+                        "LLaMA":2,
+                    }
+                    # first sort by family
+        x_models = sorted(
+                        x_models,
+                        key=lambda model: family_order.get(
+                            image_family(model)
+                            if modalities[1] == "image"
+                            else speech_family(model)
+                            if modalities[1] == "speech"
+                            else text_family(model)
+                        ),
+                        # default=999
+                    )
 
         x = np.arange(len(x_models))
 
@@ -149,13 +210,14 @@ def plot_results(results, c_results, type, modalities, file_name):
 
             size = get_size(y_model)
             color = size_colors[size]
+            marker = size_markers.get(size, "o")  # Default to 'o' if size not found
             
             ax.plot(
                 x,
                 values,
                 color=color,
                 linewidth=3.0,
-                marker="o",
+                marker=marker,
                 markersize=9,
                 markeredgewidth=0,
                 label=size,
@@ -231,7 +293,7 @@ def plot_results(results, c_results, type, modalities, file_name):
         ax.set_xticks(x)
         ax.set_xticklabels(
                 [pretty_model_name(m) for m in x_models],
-                rotation=50,
+                rotation=90,
                 ha="right",
                 rotation_mode="anchor",
                 color=text_color,
@@ -284,7 +346,7 @@ def plot_results(results, c_results, type, modalities, file_name):
 
         elif modalities[0] == "speech":
             print(f"unique: {unique}")
-            desired_order = ["tiny", "small", "base", "large","xlarge", "huge", "giant"] 
+            desired_order = ["tiny", "small", "base","base+", "large","large (robust)","xlarge", "huge", "giant"] 
             # desired_order = ["base"] # XXX
 
         desired_order.append("observed = {:.4f}x ".format(coeff[0][0]))
@@ -509,11 +571,43 @@ def plot_results_ordered(
                 "tiny": 0,
                 "small": 1,
                 "base": 2,
+                "base+": 2,
                 "large": 3,
+                "large (robust)": 3,
                 "xlarge": 4,
                 "huge": 5,
                 "giant": 6,
             }
+            family_order = {
+                                    "dinov2": 0,
+                                    "clip": 1,
+                                    "clip (12K ft)": 2,
+                                    "mae": 3,
+                                    "imagenet21k": 4,
+                                    "data2vec-vision": 5,
+                    
+                                    "W2V": 0,
+                                    "W2VX": 1,
+                                    "HB": 3,
+                                    "WavLM": 2,
+                                    "D2V": 5,
+            
+                                    "BLOOM":0,
+                                    "OpenLLaMA":1,
+                                    "LLaMA":2,
+                                }
+            print(f"x_models before sorting: {x_models}")
+            # first sort by family
+            x_models = sorted(
+                x_models,
+                key=lambda model: family_order.get(
+                    image_family(model)
+                    if modalities[1] == "image"
+                    else speech_family(model)
+                    if modalities[1] == "speech"
+                    else text_family(model)
+                ,999),
+            )
 
             x_models = sorted(
                 x_models,
@@ -745,7 +839,7 @@ def plot_results_ordered(
                 pretty_model_name(m)
                 for m in x_models
             ],
-            rotation=50,
+            rotation=90,
             ha="right",
             rotation_mode="anchor",
             color=text_color,

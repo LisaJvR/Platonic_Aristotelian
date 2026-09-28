@@ -222,81 +222,80 @@ def pretty_model_name(model_name: str) -> str:
 
     # ---------- Text ----------
     if "bloom" in name:
-        return model_name.split("-")[-1]
+        return f"bloom{model_name.split("-")[-1]}"
 
     if "open_llama" in name:
-        return model_name.split("_")[-1]
+        return f"openllama{model_name.split('_')[-1]}"
 
     if "huggyllama/llama" in name:
-        return model_name.split("-")[-1]
+        return f"llama{model_name.split("-")[-1]}"
 
     if "meta-llama-3" in name:
         return  model_name.split("-")[-1]
 
     if "gemma" in name:
-        return model_name.split("-")[-1]
+        return f"gemma{model_name.split("-")[-1]}"
 
     if "mistral-" in name:
         size = re.search(r"(\d+b)", name)
         size = size.group(1).upper() if size else ""
-        return size
+        return f"mistral{size}"
 
     if "mixtral" in name:
         size = re.search(r"(\d+x\d+b)", name)
         size = size.group(1).upper() if size else ""
-        return size
+        return f"mixtral{size}"
 
     if "olmo" in name:
         size = re.search(r"(\d+b)", name)
         size = size.group(1).upper() if size else ""
-        return size
+        return f"olmo{size}"
 
     if "data2vec-text" in name:
         size = model_name.split("-")[-1]
-        return size
+        return f"data2vec{size}"
 
     # ---------- Speech ----------
     if "wav2vec2-xls-r" in name:
         size = model_name.split("-")[-1]
         if size == "300m":
-            return "W2VX (B)"
+            return "wave2vecxls300m"
         if size == "1b":
-            return "W2VX (L)"
-
+            return "wave2vecxls1b"
 
     if "wav2vec2" in name:
         if "large-robust" in name:
-            return " W2V (L*)"
+            return "wave2vecrobust900m"
         if "large-lv60" in name:
-            return"W2V (L*)"
+            return"wave2veclv900m"
         if "large" in name:
-            return "W2V (L)"
+            return "wave2vec900m"
         if "base" in name:
-            return "W2V (B)"
+            return "wave2vec300m"
 
     if "hubert" in name:
         if "xlarge" in name:
-            return "HB (XL)"
+            return "hubert1b"
         if "large" in name:
-            return "HB (L)"
+            return "hubert900m"
         if "base" in name:
-            return "HB (B)"
+            return "hubert300m"
 
     if "data2vec-audio" in name:
         size = model_name.split("-")[-1]
         if size == "base":
-            return "D2V (B)"
+            return "data2vec300m"
         if size == "large":
-            return "D2V (L)"
+            return "data2vec900m"
 
     if "wavlm" in name:
         if "base-plus" in name:
-            return "WLM (B+)"
+            return "wavlmplus300m"
         size = model_name.split("-")[-1]
         if size == "base":
-            return "WLM (B)"
+            return "wavlm300m"
         if size == "large":
-            return "WLM (L)"
+            return "wavlm900m"
         return size
 
     if "unispeech-sat" in name:
@@ -313,17 +312,24 @@ def get_size(model_name):
             return "tiny"
         if "small" in name:
             return "small"
+        if "base-plus" in name:
+            return "base+"
         if "base" in name:
             return "base"
-        if "large" in name:
-            return "large"
+        if "large-robust" in name:
+            return "large (robust)"
         if "xlarge" in name:
             return "xlarge"
+        if "large" in name:
+            return "large"
         if "huge" in name:
             return "huge"
         if "giant" in name:
             return "giant"
-
+        if "300m" in name:
+            return "small"
+        if "1b" in name:
+            return "xlarge"
         return "base"
 
 def get_family_name(modality, model_name):

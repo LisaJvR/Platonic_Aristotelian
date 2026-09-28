@@ -624,6 +624,8 @@ def plot_experiment_results(
         calibrated=False,
     )
 
+    print(f"Raw results for {modalities[0]}-{modalities[1]} with metric {metric_name}:")
+
     calibrated_results = {}
 
     if calibrated:
@@ -641,13 +643,13 @@ def plot_experiment_results(
         plot_type="scaling",
     )
 
-    # plot_results(
-    #     raw_results,
-    #     calibrated_results,
-    #     metric_name,
-    #     modalities,
-    #     file_name,
-    # )
+    plot_results(
+        raw_results,
+        calibrated_results,
+        metric_name,
+        modalities,
+        file_name,
+    )
     plot_results_ordered(
         raw_results,
         calibrated_results,
@@ -829,11 +831,11 @@ if __name__ == "__main__":
             results_file=f"{results_files}/results.csv",
         )
 
-
+    # print(f" results will be saved to {results_files}/results.csv")
     # plot_experiment_results(
     #     results_file=f"{results_files}/results.csv",
     #     experiment_name="image_text",
     #     EXPERIMENTS=EXPERIMENTS,
-    #     metric_name="mknn_k10",
+    #     metric_name="cka_linear_biased",
     #     calibrated=False,
     # )
