@@ -268,7 +268,7 @@ data ={
                             }
                         },
         },
-         "cka_linear": {
+        "cka_linear": {
         
                     "imagenet21k": {
                         "tiny": {
@@ -534,11 +534,284 @@ data ={
                             "llama65b": 0.525
                         }
                     }
-                }
+                },
+"svcca": {
+
+    "imagenet21k": {
+
+        "tiny": {
+            "bloom560m": 0.343,
+            "bloom1.1b": 0.379,
+            "bloom1.7b": 0.376,
+            "bloom3b": 0.378,
+            "bloom7b": 0.373,
+            "openllama3b": 0.406,
+            "openllama7b": 0.405,
+            "openllama13b": 0.403,
+            "llama7b": 0.409,
+            "llama13b": 0.406,
+            "llama33b": 0.409,
+            "llama65b": 0.409
+        },
+
+        "small": {
+            "bloom560m": 0.349,
+            "bloom1.1b": 0.359,
+            "bloom1.7b": 0.371,
+            "bloom3b": 0.383,
+            "bloom7b": 0.377,
+            "openllama3b": 0.407,
+            "openllama7b": 0.389,
+            "openllama13b": 0.398,
+            "llama7b": 0.410,
+            "llama13b": 0.405,
+            "llama33b": 0.431,
+            "llama65b": 0.440
+        },
+
+        "base": {
+            "bloom560m": 0.337,
+            "bloom1.1b": 0.345,
+            "bloom1.7b": 0.338,
+            "bloom3b": 0.352,
+            "bloom7b": 0.377,
+            "openllama3b": 0.368,
+            "openllama7b": 0.381,
+            "openllama13b": 0.392,
+            "llama7b": 0.405,
+            "llama13b": 0.402,
+            "llama33b": 0.397,
+            "llama65b": 0.415
+        },
+
+        "large": {
+            "bloom560m": 0.334,
+            "bloom1.1b": 0.340,
+            "bloom1.7b": 0.354,
+            "bloom3b": 0.357,
+            "bloom7b": 0.365,
+            "openllama3b": 0.379,
+            "openllama7b": 0.377,
+            "openllama13b": 0.395,
+            "llama7b": 0.397,
+            "llama13b": 0.396,
+            "llama33b": 0.399,
+            "llama65b": 0.409
+        }
     },
+
+    "mae": {
+
+        "base": {
+            "bloom560m": 0.317,
+            "bloom1.1b": 0.315,
+            "bloom1.7b": 0.315,
+            "bloom3b": 0.316,
+            "bloom7b": 0.323,
+            "openllama3b": 0.335,
+            "openllama7b": 0.321,
+            "openllama13b": 0.354,
+            "llama7b": 0.345,
+            "llama13b": 0.340,
+            "llama33b": 0.345,
+            "llama65b": 0.360
+        },
+
+        "large": {
+            "bloom560m": 0.348,
+            "bloom1.1b": 0.355,
+            "bloom1.7b": 0.355,
+            "bloom3b": 0.363,
+            "bloom7b": 0.358,
+            "openllama3b": 0.379,
+            "openllama7b": 0.374,
+            "openllama13b": 0.386,
+            "llama7b": 0.382,
+            "llama13b": 0.388,
+            "llama33b": 0.391,
+            "llama65b": 0.391
+        },
+
+        "huge": {
+            "bloom560m": 0.351,
+            "bloom1.1b": 0.359,
+            "bloom1.7b": 0.371,
+            "bloom3b": 0.364,
+            "bloom7b": 0.387,
+            "openllama3b": 0.389,
+            "openllama7b": 0.406,
+            "openllama13b": 0.389,
+            "llama7b": 0.400,
+            "llama13b": 0.397,
+            "llama33b": 0.395,
+            "llama65b": 0.393
+        }
+    },
+
+    "dinov2": {
+
+        "small": {
+            "bloom560m": 0.389,
+            "bloom1.1b": 0.400,
+            "bloom1.7b": 0.390,
+            "bloom3b": 0.410,
+            "bloom7b": 0.415,
+            "openllama3b": 0.430,
+            "openllama7b": 0.429,
+            "openllama13b": 0.432,
+            "llama7b": 0.429,
+            "llama13b": 0.430,
+            "llama33b": 0.454,
+            "llama65b": 0.447
+        },
+
+        "base": {
+            "bloom560m": 0.410,
+            "bloom1.1b": 0.423,
+            "bloom1.7b": 0.421,
+            "bloom3b": 0.423,
+            "bloom7b": 0.431,
+            "openllama3b": 0.463,
+            "openllama7b": 0.434,
+            "openllama13b": 0.448,
+            "llama7b": 0.452,
+            "llama13b": 0.445,
+            "llama33b": 0.463,
+            "llama65b": 0.456
+        },
+
+        "large": {
+            "bloom560m": 0.404,
+            "bloom1.1b": 0.412,
+            "bloom1.7b": 0.406,
+            "bloom3b": 0.422,
+            "bloom7b": 0.431,
+            "openllama3b": 0.453,
+            "openllama7b": 0.438,
+            "openllama13b": 0.462,
+            "llama7b": 0.464,
+            "llama13b": 0.445,
+            "llama33b": 0.461,
+            "llama65b": 0.463
+        },
+
+        "giant": {
+            "bloom560m": 0.378,
+            "bloom1.1b": 0.399,
+            "bloom1.7b": 0.413,
+            "bloom3b": 0.416,
+            "bloom7b": 0.416,
+            "openllama3b": 0.438,
+            "openllama7b": 0.436,
+            "openllama13b": 0.441,
+            "llama7b": 0.442,
+            "llama13b": 0.446,
+            "llama33b": 0.466,
+            "llama65b": 0.455
+        }
+    },
+
+    "clip": {
+
+        "base": {
+            "bloom560m": 0.424,
+            "bloom1.1b": 0.488,
+            "bloom1.7b": 0.468,
+            "bloom3b": 0.472,
+            "bloom7b": 0.472,
+            "openllama3b": 0.510,
+            "openllama7b": 0.495,
+            "openllama13b": 0.510,
+            "llama7b": 0.513,
+            "llama13b": 0.484,
+            "llama33b": 0.493,
+            "llama65b": 0.480
+        },
+
+        "large": {
+            "bloom560m": 0.445,
+            "bloom1.1b": 0.455,
+            "bloom1.7b": 0.475,
+            "bloom3b": 0.477,
+            "bloom7b": 0.491,
+            "openllama3b": 0.503,
+            "openllama7b": 0.512,
+            "openllama13b": 0.514,
+            "llama7b": 0.514,
+            "llama13b": 0.527,
+            "llama33b": 0.523,
+            "llama65b": 0.538
+        },
+
+        "huge": {
+            "bloom560m": 0.449,
+            "bloom1.1b": 0.470,
+            "bloom1.7b": 0.468,
+            "bloom3b": 0.516,
+            "bloom7b": 0.499,
+            "openllama3b": 0.534,
+            "openllama7b": 0.519,
+            "openllama13b": 0.513,
+            "llama7b": 0.513,
+            "llama13b": 0.514,
+            "llama33b": 0.525,
+            "llama65b": 0.528
+        }
+    },
+
+    "clip (12K ft)": {
+
+        "base": {
+            "bloom560m": 0.363,
+            "bloom1.1b": 0.390,
+            "bloom1.7b": 0.385,
+            "bloom3b": 0.374,
+            "bloom7b": 0.384,
+            "openllama3b": 0.415,
+            "openllama7b": 0.423,
+            "openllama13b": 0.420,
+            "llama7b": 0.443,
+            "llama13b": 0.431,
+            "llama33b": 0.440,
+            "llama65b": 0.437
+        },
+
+        "large": {
+            "bloom560m": 0.366,
+            "bloom1.1b": 0.378,
+            "bloom1.7b": 0.410,
+            "bloom3b": 0.397,
+            "bloom7b": 0.394,
+            "openllama3b": 0.425,
+            "openllama7b": 0.421,
+            "openllama13b": 0.418,
+            "llama7b": 0.449,
+            "llama13b": 0.450,
+            "llama33b": 0.444,
+            "llama65b": 0.439
+        },
+
+        "huge": {
+            "bloom560m": 0.371,
+            "bloom1.1b": 0.406,
+            "bloom1.7b": 0.409,
+            "bloom3b": 0.424,
+            "bloom7b": 0.429,
+            "openllama3b": 0.450,
+            "openllama7b": 0.435,
+            "openllama13b": 0.451,
+            "llama7b": 0.447,
+            "llama13b": 0.455,
+            "llama33b": 0.469,
+            "llama65b": 0.470
+        }
     }
+}
+    }
+}
 
 def get_platonic_trend(x, type= "Platonic", metric="mknn_k10"):
+    print(f"Calculating trend for {type} | {metric}...")
     all_coeffs = {}
     avg_family_coeffs = {}
 
@@ -569,4 +842,7 @@ def get_platonic_trend(x, type= "Platonic", metric="mknn_k10"):
 
         avg_family_coeff = np.mean([all_coeffs[(family, image_model)] for image_model in data[type][metric][family]])
         avg_family_coeffs[family] = avg_family_coeff
+
+        if metric == "svcca":
+            print(f"Average trend for {family}: {avg_family_coeff:.4f}")
     return all_coeffs, avg_family_coeffs

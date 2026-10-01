@@ -610,7 +610,7 @@ def plot_results_ordered(
                                     "OpenLLaMA":1,
                                     "LLaMA":2,
                                 }
-            print(f"x_models before sorting: {x_models}")
+            # print(f"x_models before sorting: {x_models}")
             # first sort by family
             x_models = sorted(
                 x_models,
@@ -815,7 +815,7 @@ def plot_results_ordered(
         if (
             modalities[0] == "image"
             and modalities[1] == "text"
-            and type in ["mknn_k10", "cka_linear_biased"]
+            and type in ["mknn_k10", "cka_linear_biased", "svcca"]
         ):
 
             met = type

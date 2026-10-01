@@ -595,10 +595,11 @@ def experiment_driver(
                 if experiment_name == "image_text" and metric_name == "cka_linear_biased":
                         calibrate = True
                 if experiment_name == "image_speech":
-                    if metric_name in ("cka_linear_biased", "cka_linear_unbiased", "svcca", "mknn_k10"):
+                    if metric_name in ("cka_linear_biased", "svcca", "mknn_k10"): # could add cka unbiased
                         calibrate = True
-                if experiment_name == "speech_text" and metric_name == "cka_linear_biased":
-                    calibrate = True
+                if experiment_name == "speech_text":
+                    if metric_name in ("cka_linear_biased", "svcca", "mknn_k10"): # could add cka unbiased
+                        calibrate = True
 
                 run_experiment(
                     experiment_name=experiment_name,
@@ -742,13 +743,12 @@ if __name__ == "__main__":
             "modalities": ("image", "text"),
             "n_sets": 1,
             "metrics": [
-                "mknn_k10",
                 "cka_linear_biased",
                 "cka_rbf_biased",
+                "mknn_k10",
                 "cka_linear_unbiased",
                 "cka_rbf_unbiased",
                 "svcca",
-                
             ],
         },
       
@@ -756,9 +756,9 @@ if __name__ == "__main__":
             "modalities": ("speech", "text"),
             "n_sets": 1,
             "metrics": [
-                "mknn_k10",
                 "cka_linear_biased",
                 "cka_rbf_biased",
+                "mknn_k10",
                 "cka_linear_unbiased",
                 "cka_rbf_unbiased",
                 "svcca",
@@ -769,9 +769,9 @@ if __name__ == "__main__":
             "modalities": ("image", "speech"),
             "n_sets": 1,
             "metrics": [
-                "mknn_k10",
                 "cka_linear_biased",
                 "cka_rbf_biased",
+                "mknn_k10",
                 "cka_linear_unbiased",
                 "cka_rbf_unbiased",
                 "svcca",
@@ -782,9 +782,10 @@ if __name__ == "__main__":
             "modalities": ("image", "text"),
             "n_sets": 5,
             "metrics": [
-                "mknn_k10",
+                # "mknn_k10",
                 "cka_linear_biased",
-                "cka_rbf_biased"
+                "cka_rbf_biased",
+                "svcca",
             ]
         },
 
@@ -792,9 +793,10 @@ if __name__ == "__main__":
             "modalities": ("image", "speech"),
             "n_sets": 5,
             "metrics": [
-                "mknn_k10",
+                # "mknn_k10",
                 "cka_linear_biased",
-                "cka_rbf_biased"
+                "cka_rbf_biased",
+                "svcca",
             ]
         },
     }
@@ -822,34 +824,50 @@ if __name__ == "__main__":
         calibrate = True
     
     # first run all non-calibrated experiments, then run all calibrated experiments
-    # experiment_driver(
-    #     experiment_names=experiment_names,
-    #     EXPERIMENTS=EXPERIMENTS,
-    #     model_set="test",
-    #     num_chunks= number_of_chunks,
-    #     clip=True,
-    #     exact=False,
-    #     q=0.9,
-    #     calibrate=False,
-    #     calibration_K=200,# XXX 200
-    #     plot=True,
-    #     results_file=f"{results_files}/results.csv",
-    # )
-    # if calibrate:
-    #     print(f"\n\nRunning calibration for {experiment_names} with K={200}")
-    #     experiment_driver(
-    #         experiment_names=experiment_names,
-    #         EXPERIMENTS=EXPERIMENTS,
-    #         model_set="test",
-    #         num_chunks= number_of_chunks,
-    #         clip=True,
-    #         exact=False,
-    #         q=0.9,
-    #         calibrate=True,
-    #         calibration_K=200,# XXX 200
-    #         plot=True,
-    #         results_file=f"{results_files}/results.csv",
-    #     )
+    if experiment_names in ("caption_density_it", "caption_density_is"):
+        experiment_driver(
+            experiment_names=experiment_names,
+            EXPERIMENTS=EXPERIMENTS,
+            model_set="sanity_checks",
+            num_chunks= number_of_chunks,
+            clip=True,
+            exact=False,
+            q=0.9,
+            calibrate=False,
+            calibration_K=200,# XXX 200
+            plot=True,
+            results_file=f"{results_files}/results.csv",
+        )
+       
+    else:
+        experiment_driver(
+            experiment_names=experiment_names,
+            EXPERIMENTS=EXPERIMENTS,
+            model_set="test",
+            num_chunks= number_of_chunks,
+            clip=True,
+            exact=False,
+            q=0.9,
+            calibrate=False,
+            calibration_K=200,# XXX 200
+            plot=True,
+            results_file=f"{results_files}/results.csv",
+        )
+        if calibrate:
+            print(f"\n\nRunning calibration for {experiment_names} with K={200}")
+            experiment_driver(
+                experiment_names=experiment_names,
+                EXPERIMENTS=EXPERIMENTS,
+                model_set="test",
+                num_chunks= number_of_chunks,
+                clip=True,
+                exact=False,
+                q=0.9,
+                calibrate=True,
+                calibration_K=200,# XXX 200
+                plot=True,
+                results_file=f"{results_files}/results.csv",
+            )
 
     for experiment_name in experiment_names:
         for metric_name in EXPERIMENTS[experiment_name]["metrics"]:

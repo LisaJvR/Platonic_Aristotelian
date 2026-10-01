@@ -17,17 +17,17 @@ MODELSETS = {
             "huggyllama/llama-65b", # P 
 
             # Platonic 
-            "google/gemma-2b",# P
-            "google/gemma-7b",# P
-            "mistralai/Mistral-7B-v0.1",# P
-            "mistralai/Mixtral-8x7B-v0.1",# P
-            "allenai/OLMo-1B-hf",# P
-            "allenai/OLMo-7B-hf",# P
+            # "google/gemma-2b",# P
+            # "google/gemma-7b",# P
+            # "mistralai/Mistral-7B-v0.1",# P
+            # "mistralai/Mixtral-8x7B-v0.1",# P
+            # "allenai/OLMo-1B-hf",# P
+            # "allenai/OLMo-7B-hf",# P
 
-            "NousResearch/Meta-Llama-3-8B",##
-            "NousResearch/Meta-Llama-3-70B", #largest #
+            # "NousResearch/Meta-Llama-3-8B",##
+            # "NousResearch/Meta-Llama-3-70B", #largest #
 
-            "facebook/data2vec-text-base", # have data2vec audio later
+            # "facebook/data2vec-text-base", # have data2vec audio later
         ],
 
         "image": [
@@ -105,12 +105,12 @@ MODELSETS = {
             "huggyllama/llama-65b", # P 
             
             # Platonic 
-            "google/gemma-2b",
-            "google/gemma-7b",# P
-            "mistralai/Mistral-7B-v0.1",# P
-            "mistralai/Mixtral-8x7B-v0.1",# skipped
-            "allenai/OLMo-1B-hf",# P
-            "allenai/OLMo-7B-hf",# P
+            # "google/gemma-2b",
+            # "google/gemma-7b",# P
+            # "mistralai/Mistral-7B-v0.1",# P
+            # "mistralai/Mixtral-8x7B-v0.1",# skipped
+            # "allenai/OLMo-1B-hf",# P
+            # "allenai/OLMo-7B-hf",# P
     
             # "NousResearch/Meta-Llama-3-8B",##         
             # "facebook/data2vec-text-base", # have data2vec audio later
