@@ -218,6 +218,31 @@ def compute_pwcca(X,Y):
 
 # --------------------------------------------
 
+# for caption denisty
+def linear_cka_biased(X, Y):
+    # Use float64 for numerical stability
+    X = X.double()
+    Y = Y.double()
+
+    # Center features across samples
+    X = X - X.mean(dim=0, keepdim=True)
+    Y = Y - Y.mean(dim=0, keepdim=True)
+
+    # Cross covariance-like term
+    XY = X.T @ Y
+
+    numerator = torch.sum(XY * XY)
+
+    XX = X.T @ X
+    YY = Y.T @ Y
+
+    denominator = torch.sqrt(
+        torch.sum(XX * XX) *
+        torch.sum(YY * YY)
+    )
+
+    return numerator / denominator
+
 def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
     '''
     feats_A and feats_B : [N, L, D]
@@ -230,25 +255,31 @@ def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
     scores = torch.empty(n_layers_A,n_layers_B,dtype=torch.float32,device=device)
 
     if metric_fn == compute_cka:
-        import time
-        # if metric_kwargs.get("unbiased", False):
-            # compute all cka simultaneously in kernel space
-        Y_kernels = []
-        for i in range(n_layers_A):
-            X = feats_A[:, i, :] 
-            # compute kernel
-            X_ker = compute_cka_kernel(X, **metric_kwargs)
-
-            for j in range(n_layers_B):
-                if len(Y_kernels) > j:
-                    Y_ker = Y_kernels[j]
-                else:
+        if metric_kwargs.get("n_sets", 1) > 1:
+            for i in range(n_layers_A):
+                X = feats_A[:, i, :] 
+                for j in range(n_layers_B):
                     Y = feats_B[:, j, :]
-                    # compute Y kernel
-                    Y_ker = compute_cka_kernel(Y, **metric_kwargs)
-                    Y_kernels.append(Y_ker.cpu())
+                    scores[i, j] = linear_cka_biased(X,Y)
+        else:
+            # if metric_kwargs.get("unbiased", False):
+                # compute all cka simultaneously in kernel space
+            Y_kernels = []
+            for i in range(n_layers_A):
+                X = feats_A[:, i, :] 
+                # compute kernel
+                X_ker = compute_cka_kernel(X, **metric_kwargs)
 
-                scores[i, j] = metric_fn(X_ker,Y_ker,**metric_kwargs,)
+                for j in range(n_layers_B):
+                    if len(Y_kernels) > j:
+                        Y_ker = Y_kernels[j]
+                    else:
+                        Y = feats_B[:, j, :]
+                        # compute Y kernel
+                        Y_ker = compute_cka_kernel(Y, **metric_kwargs)
+                        Y_kernels.append(Y_ker.cpu())
+
+                    scores[i, j] = metric_fn(X_ker,Y_ker,**metric_kwargs,)
     else:
         for i in range(n_layers_A):
             X = feats_A[:, i, :] 

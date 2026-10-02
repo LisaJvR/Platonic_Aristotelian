@@ -1,3 +1,5 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 from pna_models import get_models
 from pna_data import load_all_chunks
@@ -40,7 +42,6 @@ def load_results(file_path):
     with open(file_path, newline="") as f:
         reader = csv.DictReader(f)
         return list(reader)
-
 
 def save_result(file_path, result):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -163,7 +164,6 @@ def compute_calibrated_score(
 
     def aggregate(S):
         S = S.reshape(n_layers_A,n_sets,n_layers_B,)
-        # Same aggregation as raw experiment
         S = S.mean(dim=1)
 
         return S.max()
@@ -400,7 +400,7 @@ def run_caption_density_experiment(
                 None,
             )
 
-            # print(f"Shape of feats_A: {feats_A.shape}, feats_B_list: {feats_B_list.shape}")
+            print(f"Shape of feats_A: {feats_A.shape}, feats_B_list: {len(feats_B_list[0])}")
             scores = evaluate_pair(
                 feats_A,
                 feats_B_list,
@@ -587,7 +587,7 @@ def experiment_driver(
                     clip=clip,
                     exact=exact,
                     q=q,
-                    calibrate=calibrate,
+                    calibrate=False,#XXX
                     calibration_K=calibration_K,
                 )
             else:
@@ -784,6 +784,7 @@ if __name__ == "__main__":
             "metrics": [
                 # "mknn_k10",
                 "cka_linear_biased",
+                "cka_linear_unbiased",
                 "cka_rbf_biased",
                 "svcca",
             ]
@@ -795,6 +796,7 @@ if __name__ == "__main__":
             "metrics": [
                 # "mknn_k10",
                 "cka_linear_biased",
+                "cka_linear_unbiased",
                 "cka_rbf_biased",
                 "svcca",
             ]
@@ -815,8 +817,8 @@ if __name__ == "__main__":
         print(f"Running experiment: {experiment_names} with calibrate={calibrate}")
     else:
         experiment_names = [
-            # "caption_density_it",
-            # "caption_density_is",
+            "caption_density_it",
+            "caption_density_is",
             "image_speech",
             "speech_text",
             "image_text",
