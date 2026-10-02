@@ -1,6 +1,7 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
+
 from pna_models import get_models
 from pna_data import load_all_chunks
 from pna_metrics import  knn_layer, compare_layers, compute_cka, compute_cka_kernel
@@ -318,6 +319,7 @@ def run_caption_density_experiment(
     calibration_K=200,
     caption_density=5,
 ):
+    print(f"Number of chunks: {num_chunks}")
     experiment = EXPERIMENTS[experiment_name]
     metric_config = METRICS[metric_name]
 
@@ -400,7 +402,7 @@ def run_caption_density_experiment(
                 None,
             )
 
-            print(f"Shape of feats_A: {feats_A.shape}, feats_B_list: {len(feats_B_list[0])}")
+            print(f"Shape of feats_A: {feats_A.shape}, feats_B_list: {(feats_B_list[0].shape)}")
             scores = evaluate_pair(
                 feats_A,
                 feats_B_list,
@@ -738,6 +740,9 @@ def results_to_dict(
     return results
 
 if __name__ == "__main__":
+    print(torch.cuda.device_count())   # should print 1
+    print(torch.cuda.get_device_name(0))
+
     EXPERIMENTS = {
         "image_text": {
             "modalities": ("image", "text"),
@@ -745,9 +750,9 @@ if __name__ == "__main__":
             "metrics": [
                 "cka_linear_biased",
                 "cka_rbf_biased",
-                "mknn_k10",
-                "cka_linear_unbiased",
-                "cka_rbf_unbiased",
+                # "mknn_k10",
+                # "cka_linear_unbiased",
+                # "cka_rbf_unbiased",
                 "svcca",
             ],
         },
@@ -758,9 +763,9 @@ if __name__ == "__main__":
             "metrics": [
                 "cka_linear_biased",
                 "cka_rbf_biased",
-                "mknn_k10",
-                "cka_linear_unbiased",
-                "cka_rbf_unbiased",
+                # "mknn_k10",
+                # "cka_linear_unbiased",
+                # "cka_rbf_unbiased",
                 "svcca",
             ],
         },
@@ -771,9 +776,9 @@ if __name__ == "__main__":
             "metrics": [
                 "cka_linear_biased",
                 "cka_rbf_biased",
-                "mknn_k10",
-                "cka_linear_unbiased",
-                "cka_rbf_unbiased",
+                # "mknn_k10",
+                # "cka_linear_unbiased",
+                # "cka_rbf_unbiased",
                 "svcca",
             ],
         },
@@ -817,8 +822,8 @@ if __name__ == "__main__":
         print(f"Running experiment: {experiment_names} with calibrate={calibrate}")
     else:
         experiment_names = [
-            "caption_density_it",
-            "caption_density_is",
+            # "caption_density_it",
+            # "caption_density_is",
             "image_speech",
             "speech_text",
             "image_text",
@@ -831,12 +836,12 @@ if __name__ == "__main__":
             experiment_names=experiment_names,
             EXPERIMENTS=EXPERIMENTS,
             model_set="sanity_checks",
-            num_chunks= number_of_chunks,
+            num_chunks= 2,
             clip=True,
             exact=False,
             q=0.9,
             calibrate=False,
-            calibration_K=200,# XXX 200
+            calibration_K=100,# XXX 200
             plot=True,
             results_file=f"{results_files}/results.csv",
         )
@@ -845,13 +850,13 @@ if __name__ == "__main__":
         experiment_driver(
             experiment_names=experiment_names,
             EXPERIMENTS=EXPERIMENTS,
-            model_set="test",
+            model_set="sanity_checks",
             num_chunks= number_of_chunks,
             clip=True,
             exact=False,
             q=0.9,
             calibrate=False,
-            calibration_K=200,# XXX 200
+            calibration_K=100,# XXX 200
             plot=True,
             results_file=f"{results_files}/results.csv",
         )
@@ -860,13 +865,13 @@ if __name__ == "__main__":
             experiment_driver(
                 experiment_names=experiment_names,
                 EXPERIMENTS=EXPERIMENTS,
-                model_set="test",
+                model_set="sanity_checks",
                 num_chunks= number_of_chunks,
                 clip=True,
                 exact=False,
                 q=0.9,
                 calibrate=True,
-                calibration_K=200,# XXX 200
+                calibration_K=100,# XXX 200
                 plot=True,
                 results_file=f"{results_files}/results.csv",
             )

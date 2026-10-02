@@ -1,4 +1,8 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
+
+
 import numpy as np
 from calibrated_similarity import calibrate, calibrate_layers
 import faiss
@@ -256,7 +260,8 @@ def compare_layers(feats_A, feats_B, metric_fn, metric_kwargs):
 
     if metric_fn == compute_cka:
         if metric_kwargs.get("n_sets", 1) > 1:
-            for i in range(n_layers_A):
+            print(f"")
+            for i in tqdm(range(n_layers_A)):
                 X = feats_A[:, i, :] 
                 for j in range(n_layers_B):
                     Y = feats_B[:, j, :]
